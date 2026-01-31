@@ -1,0 +1,9 @@
+[package]
+name = "company_reporting"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = {version="4.5.56", features=["derive"]}
+color-print = "0.3.7"
+eyre = "0.6.12"
