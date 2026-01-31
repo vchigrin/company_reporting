@@ -4,6 +4,7 @@ use eyre::{Result, eyre};
 use std::path;
 
 mod model;
+mod report_parser;
 
 #[derive(Debug, Clone, ValueEnum)]
 enum ReportType {
@@ -19,6 +20,10 @@ struct UpdateDbArgs {
     period: model::Period,
     #[arg(long)]
     report_type: ReportType,
+    #[arg(long)]
+    report_path: path::PathBuf,
+    #[arg(long)]
+    page_number: i32,
 }
 
 #[derive(Debug, Subcommand)]
@@ -38,14 +43,32 @@ struct CliParams {
     db_path: path::PathBuf,
 }
 
-fn handle_command(db_path: &path::Path, command: &Command) -> Result<()> {
+fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
+    let page_lines = report_parser::get_page_lines(&args.report_path, args.page_number)?;
+    match args.report_type {
+        ReportType::Balance => {
+            let report = report_parser::parse_balance_report(&page_lines)?;
+            println!("Parsed balance {:?}", report);
+            // TODO: save to DB.
+        }
+        ReportType::Income => {
+            let report = report_parser::parse_income_report(&page_lines)?;
+            println!("Parsed income {:?}", report);
+        }
+    }
     Ok(())
+}
+
+fn process_command(db_path: &path::Path, command: &Command) -> Result<()> {
+    match command {
+        Command::UpdateDb(update_db_args) => process_update_db(db_path, update_db_args),
+    }
 }
 
 fn do_main() -> Result<()> {
     let params = CliParams::parse();
     println!("Running with params {:?}", params);
-    handle_command(&params.db_path, &params.command)?;
+    process_command(&params.db_path, &params.command)?;
     Ok(())
 }
 

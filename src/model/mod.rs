@@ -1,6 +1,6 @@
-mod balance_report;
+pub mod balance_report;
 mod company;
-mod income_report;
+pub mod income_report;
 mod money;
 mod period;
 

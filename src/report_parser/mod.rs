@@ -1,0 +1,6 @@
+mod ocr;
+mod text_parser;
+
+pub use ocr::get_page_lines;
+pub use text_parser::parse_balance_report;
+pub use text_parser::parse_income_report;
