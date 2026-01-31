@@ -3,7 +3,7 @@ use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::path;
 
-mod period;
+mod model;
 
 #[derive(Debug, Clone, ValueEnum)]
 enum ReportType {
@@ -15,8 +15,8 @@ enum ReportType {
 struct UpdateDbArgs {
     #[arg(long)]
     company_name: String,
-    #[arg(long, value_parser=period::Period::from_short_string)]
-    period: period::Period,
+    #[arg(long, value_parser=model::Period::from_short_string)]
+    period: model::Period,
     #[arg(long)]
     report_type: ReportType,
 }
