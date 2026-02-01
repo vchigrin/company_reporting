@@ -11,6 +11,7 @@ fn make_png(pdf_file_path: &Path, page_number: i32, dst_dir: &path::Path) -> Res
     let mut cmd = process::Command::new("pdftoppm");
     cmd.args(["-f", &number_str])
         .args(["-l", &number_str])
+        .args(["-r", "300"]) // Increase DPI for better tesseract recognizing.
         .args(["-singlefile", "-png"])
         .arg(pdf_file_path)
         .arg(&dst_prefix);
