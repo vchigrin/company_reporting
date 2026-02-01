@@ -122,16 +122,23 @@ impl ReportParser {
         );
         line_to_key.insert("оценочные обязательства".to_owned(), Keys::Other);
         line_to_key.insert(
-            "итого-краткосрочные обязательства".to_owned(),
+            "итого краткосрочные обязательства".to_owned(),
             Keys::TotalCurrentLiabilities,
         );
         Self { line_to_key }
     }
 
     fn parse_money(line: &str) -> Result<Money> {
-        let filtered: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+        // Sometimes tesseract add garbage '.' characters.
+        let filtered: String = line
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '.')
+            .collect();
         if filtered.is_empty() {
             return Err(eyre!("Can not parse {} as money", line));
+        }
+        if filtered == "-" {
+            return Ok(Money::zero());
         }
         if filtered.starts_with('(') && filtered.ends_with(')') {
             let val = i64::from_str(filtered.trim_matches(|c| c == '(' || c == ')'))?;
@@ -150,13 +157,31 @@ impl ReportParser {
                 log::info!("Skipping non-report line {:?}", tokens);
                 continue;
             }
-            let line_token = tokens[0].to_lowercase();
-            if let Some(key) = self.line_to_key.get(&line_token) {
+            let line_token: String = tokens[0]
+                .to_lowercase()
+                .chars()
+                .map(|c| {
+                    // Leave only lowercase Russian, to strip OCR artifacts.
+                    if c >= 'а' && c <= 'я' {
+                        return c;
+                    }
+                    return ' ';
+                })
+                .collect();
+            if let Some(key) = self.line_to_key.get(line_token.trim()) {
                 // Last element is the value of previous period.
                 // One before last - for current period.
                 // Two before last - optional reference to additional info in report.
                 let current_value_str = tokens[tokens.len() - 2];
-                let money = Self::parse_money(current_value_str)?;
+                let money: Money;
+                match Self::parse_money(current_value_str) {
+                    Ok(m) => {
+                        money = m;
+                    }
+                    Err(e) => {
+                        return Err(eyre!("Error {} on line {}", e, line));
+                    }
+                }
                 result.push(ParsedLineInfo {
                     key: *key,
                     value: money,
