@@ -44,6 +44,7 @@ pub struct Equity {
     capital_surplus: Money,
     // Нераспределённая прибыль (непокрытый убыток)
     retained_earnings: Money,
+    other: Money,
 }
 
 // Долгосрочные обязательства
@@ -52,7 +53,7 @@ pub struct LongTermLiabilities {
     // Кредиты и займы
     loans: Money,
     // Кредиторская задолженность
-    accounts_receivable: Money,
+    accounts_payable: Money,
     // Прочее
     other: Money,
 }
@@ -63,7 +64,7 @@ pub struct CurrentLiabilities {
     // Кредиты и займы
     loans: Money,
     // Кредиторская задолженность
-    accounts_receivable: Money,
+    accounts_payable: Money,
     // Прочее
     other: Money,
 }
@@ -149,42 +150,44 @@ impl Equity {
         authorised_capital: Money,
         capital_surplus: Money,
         retained_earnings: Money,
+        other: Money,
     ) -> Self {
         Self {
             authorised_capital,
             capital_surplus,
             retained_earnings,
+            other,
         }
     }
 
     pub fn total(&self) -> Money {
-        self.authorised_capital + self.capital_surplus + self.retained_earnings
+        self.authorised_capital + self.capital_surplus + self.retained_earnings + self.other
     }
 }
 
 impl LongTermLiabilities {
-    pub fn new(loans: Money, accounts_receivable: Money, other: Money) -> Self {
+    pub fn new(loans: Money, accounts_payable: Money, other: Money) -> Self {
         Self {
             loans,
-            accounts_receivable,
+            accounts_payable,
             other,
         }
     }
     pub fn total(&self) -> Money {
-        self.loans + self.accounts_receivable + self.other
+        self.loans + self.accounts_payable + self.other
     }
 }
 
 impl CurrentLiabilities {
-    pub fn new(loans: Money, accounts_receivable: Money, other: Money) -> Self {
+    pub fn new(loans: Money, accounts_payable: Money, other: Money) -> Self {
         Self {
             loans,
-            accounts_receivable,
+            accounts_payable,
             other,
         }
     }
     pub fn total(&self) -> Money {
-        self.loans + self.accounts_receivable + self.other
+        self.loans + self.accounts_payable + self.other
     }
 }
 
@@ -198,7 +201,7 @@ impl Liabilities {
 }
 
 impl BalanceReport {
-    fn new(assets: Assets, equity: Equity, liabilities: Liabilities) -> Result<Self> {
+    pub fn new(assets: Assets, equity: Equity, liabilities: Liabilities) -> Result<Self> {
         if assets.total() != equity.total() + liabilities.total() {
             return Err(eyre!(
                 "Balance mismatch. Assets {} Equity {} Liabilities {}",

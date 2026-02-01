@@ -20,3 +20,21 @@ impl ops::Add for Money {
         }
     }
 }
+
+impl ops::AddAssign for Money {
+    fn add_assign(&mut self, rhs: Self) {
+        self.roubles += rhs.roubles;
+    }
+}
+
+impl Money {
+    pub fn zero() -> Money {
+        Self { roubles: 0 }
+    }
+
+    pub fn from_thousands(thousands: i64) -> Money {
+        Self {
+            roubles: thousands * 1000,
+        }
+    }
+}

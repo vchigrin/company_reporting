@@ -45,14 +45,15 @@ struct CliParams {
 
 fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
     let page_lines = report_parser::get_page_lines(&args.report_path, args.page_number)?;
+    let parser = report_parser::ReportParser::new();
     match args.report_type {
         ReportType::Balance => {
-            let report = report_parser::parse_balance_report(&page_lines)?;
+            let report = parser.parse_balance_report(&page_lines)?;
             println!("Parsed balance {:?}", report);
             // TODO: save to DB.
         }
         ReportType::Income => {
-            let report = report_parser::parse_income_report(&page_lines)?;
+            let report = parser.parse_income_report(&page_lines)?;
             println!("Parsed income {:?}", report);
         }
     }
