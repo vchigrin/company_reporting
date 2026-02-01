@@ -29,7 +29,7 @@ fn perform_ocr(png_file_path: &Path) -> Result<Vec<String>> {
     let mut cmd = process::Command::new("tesseract");
     cmd.args(["-l", "rus"])
         .args(["-c", "preserve_interword_spaces=1"])
-        .args(["--psm", "3"])
+        .args(["--psm", "6"])
         .arg(png_file_path)
         .arg("stdout");
     let output = cmd.output()?;
