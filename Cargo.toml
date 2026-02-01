@@ -7,4 +7,6 @@ edition = "2024"
 clap = {version="4.5.56", features=["derive"]}
 color-print = "0.3.7"
 eyre = "0.6.12"
+log = "0.4.29"
+simple_logger = "5.1.0"
 tempfile = "3.24.0"

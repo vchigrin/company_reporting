@@ -147,7 +147,7 @@ impl ReportParser {
         for line in page_lines {
             let tokens: Vec<&str> = line.split("  ").filter(|p| p.len() > 0).collect();
             if tokens.len() != 3 && tokens.len() != 4 {
-                println!("Skipping non-report line {:?}", tokens);
+                log::info!("Skipping non-report line {:?}", tokens);
                 continue;
             }
             let line_token = tokens[0].to_lowercase();
@@ -162,7 +162,7 @@ impl ReportParser {
                     value: money,
                 });
             } else {
-                println!("Unknown line {:?}", line_token);
+                log::warn!("Unknown line {:?}", line_token);
             }
         }
         Ok(result)
@@ -386,7 +386,6 @@ impl ReportParser {
 
     pub fn parse_balance_report(&self, page_lines: &[String]) -> Result<BalanceReport> {
         let parsed_lines = self.parse_lines(page_lines)?;
-        println!("Parsed lines {:?}", parsed_lines);
         let non_current_assets: NonCurrentAssets;
         let current_assets: CurrentAssets;
         let equity: Equity;
@@ -403,7 +402,7 @@ impl ReportParser {
         } else {
             return Err(eyre!("Can not found total non current assets line"));
         }
-        println!("Parsed non-current assets OK: {:?}", non_current_assets);
+        log::info!("Parsed non-current assets OK: {:?}", non_current_assets);
 
         if let Some(idx) = analyzed_lines
             .iter()
@@ -414,7 +413,7 @@ impl ReportParser {
         } else {
             return Err(eyre!("Can not found total current assets line"));
         }
-        println!("Parsed current assets OK: {:?}", current_assets);
+        log::info!("Parsed current assets OK: {:?}", current_assets);
 
         if let Some(idx) = analyzed_lines
             .iter()
@@ -425,7 +424,7 @@ impl ReportParser {
         } else {
             return Err(eyre!("Can not found total equity line"));
         }
-        println!("Parsed equity OK: {:?}", equity);
+        log::info!("Parsed equity OK: {:?}", equity);
 
         if let Some(idx) = analyzed_lines
             .iter()
@@ -436,7 +435,7 @@ impl ReportParser {
         } else {
             return Err(eyre!("Can not found total long term liabilities line"));
         }
-        println!("Parsed long term liabilities OK: {:?}", equity);
+        log::info!("Parsed long term liabilities OK: {:?}", equity);
 
         if let Some(idx) = analyzed_lines
             .iter()
@@ -446,7 +445,7 @@ impl ReportParser {
         } else {
             return Err(eyre!("Can not found current liabilities line"));
         }
-        println!("Parsed current lities OK: {:?}", equity);
+        log::info!("Parsed current lities OK: {:?}", equity);
 
         BalanceReport::new(
             Assets::new(current_assets, non_current_assets),

@@ -74,6 +74,7 @@ fn do_main() -> Result<()> {
 }
 
 fn main() {
+    simple_logger::init_with_level(log::Level::Info).unwrap();
     if let Err(e) = do_main() {
         println!("Error {}", e);
         std::process::exit(1);
