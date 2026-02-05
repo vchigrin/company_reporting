@@ -49,14 +49,61 @@ enum Keys {
     Other,
 }
 
-pub struct ReportParser {
-    line_to_key: HashMap<String, Keys>,
-}
-
 #[derive(Debug)]
 struct ParsedLineInfo {
     key: Keys,
     value: Money,
+}
+
+trait ParseHelper {
+    fn parse_next<TParseCb, TParseResult>(
+        &mut self,
+        total_key: Keys,
+        cb: TParseCb,
+    ) -> Result<TParseResult>
+    where
+        TParseCb: Fn(&[ParsedLineInfo]) -> Result<TParseResult>;
+
+    fn new(analyzed_lines: Vec<ParsedLineInfo>) -> Self;
+}
+
+struct BatchParserHelper {
+    analyzed_lines: Vec<ParsedLineInfo>,
+    next_line_idx: usize,
+}
+
+impl ParseHelper for BatchParserHelper {
+    fn new(analyzed_lines: Vec<ParsedLineInfo>) -> Self {
+        Self {
+            analyzed_lines,
+            next_line_idx: 0,
+        }
+    }
+
+    fn parse_next<TParseCb, TParseResult>(
+        &mut self,
+        total_key: Keys,
+        cb: TParseCb,
+    ) -> Result<TParseResult>
+    where
+        TParseCb: Fn(&[ParsedLineInfo]) -> Result<TParseResult>,
+    {
+        if let Some(idx) = self.analyzed_lines[self.next_line_idx..]
+            .iter()
+            .position(|p| p.key == total_key)
+        {
+            let result =
+                cb(&self.analyzed_lines[self.next_line_idx..self.next_line_idx + idx + 1])?;
+            self.next_line_idx += idx + 1;
+            return Ok(result);
+        } else {
+            return Err(eyre!("Can not found line with {:?} key", total_key));
+        }
+    }
+}
+
+pub struct ReportParser {
+    line_to_key: HashMap<String, Keys>,
 }
 
 impl ReportParser {
@@ -409,67 +456,39 @@ impl ReportParser {
         Ok(result)
     }
 
-    pub fn parse_balance_report(&self, page_lines: &[String]) -> Result<BalanceReport> {
-        let parsed_lines = self.parse_lines(page_lines)?;
-        let non_current_assets: NonCurrentAssets;
-        let current_assets: CurrentAssets;
-        let equity: Equity;
-        let long_term_liabilities: LongTermLiabilities;
-        let current_liabilities: CurrentLiabilities;
+    pub fn parse_balance_report_batch(&self, page_lines: &[String]) -> Result<BalanceReport> {
+        self.parse_balance_report_generic::<BatchParserHelper>(page_lines)
+    }
 
-        let mut analyzed_lines: &[ParsedLineInfo] = &parsed_lines;
-        if let Some(idx) = analyzed_lines
-            .iter()
-            .position(|p| p.key == Keys::TotalNonCurrentAssets)
-        {
-            non_current_assets = Self::parse_non_current_assets(&analyzed_lines[..idx + 1])?;
-            analyzed_lines = &analyzed_lines[idx + 1..];
-        } else {
-            return Err(eyre!("Can not found total non current assets line"));
-        }
+    fn parse_balance_report_generic<Helper>(&self, page_lines: &[String]) -> Result<BalanceReport>
+    where
+        Helper: ParseHelper,
+    {
+        let parsed_lines = self.parse_lines(page_lines)?;
+
+        let mut helper = Helper::new(parsed_lines);
+
+        let non_current_assets =
+            helper.parse_next(Keys::TotalNonCurrentAssets, Self::parse_non_current_assets)?;
         log::info!("Parsed non-current assets OK: {:?}", non_current_assets);
 
-        if let Some(idx) = analyzed_lines
-            .iter()
-            .position(|p| p.key == Keys::TotalCurrentAssets)
-        {
-            current_assets = Self::parse_current_assets(&analyzed_lines[..idx + 1])?;
-            analyzed_lines = &analyzed_lines[idx + 1..];
-        } else {
-            return Err(eyre!("Can not found total current assets line"));
-        }
+        let current_assets =
+            helper.parse_next(Keys::TotalCurrentAssets, Self::parse_current_assets)?;
         log::info!("Parsed current assets OK: {:?}", current_assets);
 
-        if let Some(idx) = analyzed_lines
-            .iter()
-            .position(|p| p.key == Keys::TotalEquity)
-        {
-            equity = Self::parse_equity(&analyzed_lines[..idx + 1])?;
-            analyzed_lines = &analyzed_lines[idx + 1..];
-        } else {
-            return Err(eyre!("Can not found total equity line"));
-        }
+        let equity = helper.parse_next(Keys::TotalEquity, Self::parse_equity)?;
         log::info!("Parsed equity OK: {:?}", equity);
 
-        if let Some(idx) = analyzed_lines
-            .iter()
-            .position(|p| p.key == Keys::TotalLongTermLiabilities)
-        {
-            long_term_liabilities = Self::parse_long_term_liabilities(&analyzed_lines[..idx + 1])?;
-            analyzed_lines = &analyzed_lines[idx + 1..];
-        } else {
-            return Err(eyre!("Can not found total long term liabilities line"));
-        }
+        let long_term_liabilities = helper.parse_next(
+            Keys::TotalLongTermLiabilities,
+            Self::parse_long_term_liabilities,
+        )?;
         log::info!("Parsed long term liabilities OK: {:?}", equity);
 
-        if let Some(idx) = analyzed_lines
-            .iter()
-            .position(|p| p.key == Keys::TotalCurrentLiabilities)
-        {
-            current_liabilities = Self::parse_current_liabilities(&analyzed_lines[..idx + 1])?;
-        } else {
-            return Err(eyre!("Can not found current liabilities line"));
-        }
+        let current_liabilities = helper.parse_next(
+            Keys::TotalCurrentLiabilities,
+            Self::parse_current_liabilities,
+        )?;
         log::info!("Parsed current lities OK: {:?}", equity);
 
         BalanceReport::new(

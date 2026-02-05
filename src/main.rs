@@ -47,7 +47,7 @@ fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
     let parser = report_parser::ReportParser::new();
     match args.report_type {
         ReportType::Balance => {
-            let report = parser.parse_balance_report(&page_lines)?;
+            let report = parser.parse_balance_report_batch(&page_lines)?;
             println!("Parsed balance {:?}", report);
             // TODO: save to DB.
         }
