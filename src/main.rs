@@ -1,6 +1,5 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use color_print::cprintln;
-use eyre::{Result, eyre};
+use eyre::Result;
 use std::path;
 
 mod model;
@@ -74,7 +73,7 @@ fn do_main() -> Result<()> {
 }
 
 fn main() {
-    simple_logger::init_with_level(log::Level::Info).unwrap();
+    simple_logging::log_to_file("company_reporting.log", log::LevelFilter::Debug).unwrap();
     if let Err(e) = do_main() {
         println!("Error {}", e);
         std::process::exit(1);
