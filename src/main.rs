@@ -23,6 +23,8 @@ struct UpdateDbArgs {
     report_path: path::PathBuf,
     #[arg(long)]
     page_number: i32,
+    #[arg(long, action=clap::ArgAction::SetTrue)]
+    interactive: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -47,7 +49,11 @@ fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
     let parser = report_parser::ReportParser::new();
     match args.report_type {
         ReportType::Balance => {
-            let report = parser.parse_balance_report_batch(&page_lines)?;
+            let report = if args.interactive {
+                parser.parse_balance_report_interactive(&page_lines)?
+            } else {
+                parser.parse_balance_report_batch(&page_lines)?
+            };
             println!("Parsed balance {:?}", report);
             // TODO: save to DB.
         }

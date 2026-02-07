@@ -4,11 +4,15 @@ use crate::model::balance_report::{
     LongTermLiabilities, NonCurrentAssets,
 };
 use crate::model::income_report::IncomeReport;
+use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::collections::HashMap;
+use std::io;
 use std::str::FromStr;
+use strum::VariantArray;
+use strum_macros::{EnumString, VariantArray};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, VariantArray)]
 enum Keys {
     // Основные средства
     FixedAssets,
@@ -49,17 +53,18 @@ enum Keys {
     Other,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ParsedLineInfo {
     key: Keys,
     value: Money,
+    original_line: String,
 }
 
 trait ParseHelper {
     fn parse_next<TParseCb, TParseResult>(
         &mut self,
         total_key: Keys,
-        cb: TParseCb,
+        cb: &TParseCb,
     ) -> Result<TParseResult>
     where
         TParseCb: Fn(&[ParsedLineInfo]) -> Result<TParseResult>;
@@ -70,6 +75,16 @@ trait ParseHelper {
 struct BatchParserHelper {
     analyzed_lines: Vec<ParsedLineInfo>,
     next_line_idx: usize,
+}
+
+impl BatchParserHelper {
+    fn next_line_index(&self) -> usize {
+        self.next_line_idx
+    }
+
+    fn set_next_line_index(&mut self, new_val: usize) {
+        self.next_line_idx = new_val
+    }
 }
 
 impl ParseHelper for BatchParserHelper {
@@ -83,7 +98,7 @@ impl ParseHelper for BatchParserHelper {
     fn parse_next<TParseCb, TParseResult>(
         &mut self,
         total_key: Keys,
-        cb: TParseCb,
+        cb: &TParseCb,
     ) -> Result<TParseResult>
     where
         TParseCb: Fn(&[ParsedLineInfo]) -> Result<TParseResult>,
@@ -95,10 +110,146 @@ impl ParseHelper for BatchParserHelper {
             let result =
                 cb(&self.analyzed_lines[self.next_line_idx..self.next_line_idx + idx + 1])?;
             self.next_line_idx += idx + 1;
-            return Ok(result);
+            Ok(result)
         } else {
-            return Err(eyre!("Can not found line with {:?} key", total_key));
+            Err(eyre!("Can not found line with {:?} key", total_key))
         }
+    }
+}
+
+struct InteractiveParserHelper {
+    analyzed_lines: Vec<ParsedLineInfo>,
+    next_line_idx: usize,
+}
+
+impl InteractiveParserHelper {
+    fn read_string() -> Result<String> {
+        let stdin = io::stdin();
+        let mut buffer = String::new();
+        stdin.read_line(&mut buffer)?;
+        Ok(buffer.trim().to_owned())
+    }
+
+    fn take_next_item(&mut self) -> Result<ParsedLineInfo> {
+        if self.next_line_idx < self.analyzed_lines.len() {
+            let result = self.analyzed_lines[self.next_line_idx].clone();
+            self.next_line_idx += 1;
+            Ok(result)
+        } else {
+            Err(eyre!("End of parsed lines reached"))
+        }
+    }
+
+    fn next_line_index(&self) -> usize {
+        self.next_line_idx
+    }
+
+    fn set_next_line_index(&mut self, new_val: usize) {
+        self.next_line_idx = new_val
+    }
+}
+
+impl ParseHelper for InteractiveParserHelper {
+    fn new(analyzed_lines: Vec<ParsedLineInfo>) -> Self {
+        Self {
+            analyzed_lines,
+            next_line_idx: 0,
+        }
+    }
+
+    fn parse_next<TParseCb, TParseResult>(
+        &mut self,
+        total_key: Keys,
+        cb: &TParseCb,
+    ) -> Result<TParseResult>
+    where
+        TParseCb: Fn(&[ParsedLineInfo]) -> Result<TParseResult>,
+    {
+        let mut filtered_lines = Vec::new();
+        let mut cur_item = self.take_next_item()?;
+        loop {
+            cprintln!("\nLine <yellow>{}</yellow>", cur_item.original_line);
+            cprintln!(
+                "Key <green>{:?}</green>. Value <red>{}</red>",
+                cur_item.key,
+                cur_item.value
+            );
+            println!("k - change key. v - change value. Enter - Continue");
+            let cmd = Self::read_string()?;
+            match cmd.as_str() {
+                "" => {
+                    let should_finish = cur_item.key == total_key;
+                    filtered_lines.push(cur_item);
+                    if should_finish {
+                        break;
+                    }
+                    cur_item = self.take_next_item()?;
+                }
+                "v" => {
+                    println!("Enter next value, in thousands or roubles:");
+                    let sum_str = Self::read_string()?;
+                    let sum = if let Ok(v) = i64::from_str(&sum_str) {
+                        v
+                    } else {
+                        cprintln!("<red>Failed parse {}</red>", sum_str);
+                        continue;
+                    };
+                    cur_item.value = Money::from_thousands(sum);
+                }
+                "k" => {
+                    println!("Enter next key (allowed {:?}):", Keys::VARIANTS);
+                    let key_str = Self::read_string()?;
+                    let key = if let Ok(v) = Keys::from_str(&key_str) {
+                        v
+                    } else {
+                        cprintln!("<red>Failed parse {}</red>", key_str);
+                        continue;
+                    };
+                    cur_item.key = key;
+                }
+                _ => {
+                    cprintln!("<red>Unknown command {}</red>", cmd);
+                }
+            }
+        }
+        cb(&filtered_lines)
+    }
+}
+
+struct CombinedParseHelper {
+    batch: BatchParserHelper,
+    interactive: InteractiveParserHelper,
+}
+
+impl ParseHelper for CombinedParseHelper {
+    fn new(analyzed_lines: Vec<ParsedLineInfo>) -> Self {
+        let batch = BatchParserHelper::new(analyzed_lines.clone());
+        let interactive = InteractiveParserHelper::new(analyzed_lines);
+        Self { batch, interactive }
+    }
+
+    fn parse_next<TParseCb, TParseResult>(
+        &mut self,
+        total_key: Keys,
+        cb: &TParseCb,
+    ) -> Result<TParseResult>
+    where
+        TParseCb: Fn(&[ParsedLineInfo]) -> Result<TParseResult>,
+    {
+        match self.batch.parse_next(total_key, cb) {
+            Ok(batch_result) => {
+                self.interactive
+                    .set_next_line_index(self.batch.next_line_index());
+                return Ok(batch_result);
+            }
+            Err(e) => {
+                log::info!("Failed parse till {total_key:?} in batch mode. Error {e}");
+            }
+        }
+        let interactive_result = self.interactive.parse_next(total_key, cb)?;
+        self.batch
+            .set_next_line_index(self.interactive.next_line_index());
+        Ok(interactive_result)
     }
 }
 
@@ -189,17 +340,17 @@ impl ReportParser {
         }
         if filtered.starts_with('(') && filtered.ends_with(')') {
             let val = i64::from_str(filtered.trim_matches(|c| c == '(' || c == ')'))?;
-            return Ok(Money::from_thousands(-val));
+            Ok(Money::from_thousands(-val))
         } else {
             let val = i64::from_str(&filtered)?;
-            return Ok(Money::from_thousands(val));
+            Ok(Money::from_thousands(val))
         }
     }
 
     fn parse_lines(&self, page_lines: &[String]) -> Result<Vec<ParsedLineInfo>> {
         let mut result = Vec::new();
         for line in page_lines {
-            let tokens: Vec<&str> = line.split("  ").filter(|p| p.len() > 0).collect();
+            let tokens: Vec<&str> = line.split("  ").filter(|p| !p.is_empty()).collect();
             if tokens.len() != 3 && tokens.len() != 4 {
                 log::info!("Skipping non-report line {:?}", tokens);
                 continue;
@@ -209,10 +360,10 @@ impl ReportParser {
                 .chars()
                 .map(|c| {
                     // Leave only lowercase Russian, to strip OCR artifacts.
-                    if c >= 'а' && c <= 'я' {
+                    if ('а'..='я').contains(&c) {
                         return c;
                     }
-                    return ' ';
+                    ' '
                 })
                 .collect();
             if let Some(key) = self.line_to_key.get(line_token.trim()) {
@@ -220,18 +371,16 @@ impl ReportParser {
                 // One before last - for current period.
                 // Two before last - optional reference to additional info in report.
                 let current_value_str = tokens[tokens.len() - 2];
-                let money: Money;
-                match Self::parse_money(current_value_str) {
-                    Ok(m) => {
-                        money = m;
-                    }
+                let money = match Self::parse_money(current_value_str) {
+                    Ok(m) => m,
                     Err(e) => {
                         return Err(eyre!("Error {} on line {}", e, line));
                     }
-                }
+                };
                 result.push(ParsedLineInfo {
                     key: *key,
                     value: money,
+                    original_line: line.to_owned(),
                 });
             } else {
                 log::warn!("Unknown line {:?}", line_token);
@@ -460,6 +609,10 @@ impl ReportParser {
         self.parse_balance_report_generic::<BatchParserHelper>(page_lines)
     }
 
+    pub fn parse_balance_report_interactive(&self, page_lines: &[String]) -> Result<BalanceReport> {
+        self.parse_balance_report_generic::<CombinedParseHelper>(page_lines)
+    }
+
     fn parse_balance_report_generic<Helper>(&self, page_lines: &[String]) -> Result<BalanceReport>
     where
         Helper: ParseHelper,
@@ -469,27 +622,27 @@ impl ReportParser {
         let mut helper = Helper::new(parsed_lines);
 
         let non_current_assets =
-            helper.parse_next(Keys::TotalNonCurrentAssets, Self::parse_non_current_assets)?;
+            helper.parse_next(Keys::TotalNonCurrentAssets, &Self::parse_non_current_assets)?;
         log::info!("Parsed non-current assets OK: {:?}", non_current_assets);
 
         let current_assets =
-            helper.parse_next(Keys::TotalCurrentAssets, Self::parse_current_assets)?;
+            helper.parse_next(Keys::TotalCurrentAssets, &Self::parse_current_assets)?;
         log::info!("Parsed current assets OK: {:?}", current_assets);
 
-        let equity = helper.parse_next(Keys::TotalEquity, Self::parse_equity)?;
+        let equity = helper.parse_next(Keys::TotalEquity, &Self::parse_equity)?;
         log::info!("Parsed equity OK: {:?}", equity);
 
         let long_term_liabilities = helper.parse_next(
             Keys::TotalLongTermLiabilities,
-            Self::parse_long_term_liabilities,
+            &Self::parse_long_term_liabilities,
         )?;
         log::info!("Parsed long term liabilities OK: {:?}", equity);
 
         let current_liabilities = helper.parse_next(
             Keys::TotalCurrentLiabilities,
-            Self::parse_current_liabilities,
+            &Self::parse_current_liabilities,
         )?;
-        log::info!("Parsed current lities OK: {:?}", equity);
+        log::info!("Parsed current liabilities OK: {:?}", equity);
 
         BalanceReport::new(
             Assets::new(current_assets, non_current_assets),

@@ -9,4 +9,6 @@ color-print = "0.3.7"
 eyre = "0.6.12"
 log = "0.4.29"
 simple-logging = "2.0.2"
+strum = { version = "0.27.2", features = ["strum_macros"] }
+strum_macros = "0.27.2"
 tempfile = "3.24.0"
