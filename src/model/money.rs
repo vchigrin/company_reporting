@@ -42,6 +42,15 @@ impl ops::AddAssign for Money {
     }
 }
 
+impl ops::Sub for Money {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            roubles: self.roubles - rhs.roubles,
+        }
+    }
+}
+
 impl Money {
     pub fn zero() -> Money {
         Self { roubles: 0 }
@@ -51,6 +60,14 @@ impl Money {
         Self {
             roubles: thousands * 1000,
         }
+    }
+
+    pub fn from_roubles(roubles: i64) -> Money {
+        Self { roubles: roubles }
+    }
+
+    pub fn in_roubles(&self) -> i64 {
+        self.roubles
     }
 }
 

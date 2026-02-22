@@ -1,15 +1,9 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use eyre::Result;
 use std::path;
 
 mod model;
 mod report_parser;
-
-#[derive(Debug, Clone, ValueEnum)]
-enum ReportType {
-    Balance,
-    Income,
-}
 
 #[derive(Debug, Args)]
 struct UpdateDbArgs {
@@ -18,7 +12,7 @@ struct UpdateDbArgs {
     #[arg(long, value_parser=model::Period::from_short_string)]
     period: model::Period,
     #[arg(long)]
-    report_type: ReportType,
+    report_type: model::ReportType,
     #[arg(long)]
     report_path: path::PathBuf,
     #[arg(long)]
@@ -48,7 +42,7 @@ fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
     let page_lines = report_parser::get_page_lines(&args.report_path, args.page_number)?;
     let parser = report_parser::ReportParser::new();
     match args.report_type {
-        ReportType::Balance => {
+        model::ReportType::Balance => {
             let report = if args.interactive {
                 parser.parse_balance_report_interactive(&page_lines)?
             } else {
@@ -57,7 +51,7 @@ fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
             println!("Parsed balance {:?}", report);
             // TODO: save to DB.
         }
-        ReportType::Income => {
+        model::ReportType::Income => {
             let report = parser.parse_income_report(&page_lines)?;
             println!("Parsed income {:?}", report);
         }

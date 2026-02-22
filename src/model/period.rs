@@ -1,7 +1,7 @@
 use eyre::{Result, eyre};
 use std::str::FromStr;
 
-#[derive(PartialOrd, PartialEq, Eq, Ord, Copy, Clone, Debug)]
+#[derive(PartialOrd, PartialEq, Eq, Ord, Copy, Clone, Debug, Hash)]
 pub enum PeriodType {
     FirstHalf,
     // Non-standard, constructed from Full and FirstHalf periods.
@@ -9,7 +9,7 @@ pub enum PeriodType {
     Full,
 }
 
-#[derive(PartialOrd, PartialEq, Eq, Ord, Copy, Clone, Debug)]
+#[derive(PartialOrd, PartialEq, Eq, Ord, Copy, Clone, Debug, Hash)]
 pub struct Period {
     year: i32,
     period_type: PeriodType,
