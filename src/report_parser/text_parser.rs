@@ -6,12 +6,13 @@ use crate::model::balance_report::{
 use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
+use crate::report_parser::lines_classifier;
+use crate::report_parser::{GenericKeys, ParsedLineInfo};
 use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::io;
 use std::str::FromStr;
-use strum::VariantArray;
 use strum_macros::{EnumString, VariantArray};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, VariantArray)]
@@ -85,20 +86,8 @@ enum IncomeKeys {
     NetProfit,
 }
 
-trait GenericKeys:
-    PartialEq + Clone + Copy + std::fmt::Debug + std::str::FromStr + VariantArray
-{
-}
-
 impl GenericKeys for BalanceKeys {}
 impl GenericKeys for IncomeKeys {}
-
-#[derive(Debug, Clone)]
-struct ParsedLineInfo<Keys: GenericKeys> {
-    key: Keys,
-    value: Money,
-    original_line: String,
-}
 
 trait ParseHelper<Keys: GenericKeys> {
     fn parse_next<TParseCb, TParseResult>(
@@ -481,73 +470,6 @@ impl ReportParser {
         }
     }
 
-    fn parse_money(line: &str) -> Result<Money> {
-        // Sometimes tesseract add garbage '.' characters.
-        let filtered: String = line
-            .chars()
-            .filter(|c| !c.is_whitespace() && *c != '.')
-            .collect();
-        if filtered.is_empty() {
-            return Err(eyre!("Can not parse {} as money", line));
-        }
-        if filtered == "-" {
-            return Ok(Money::zero());
-        }
-        if filtered.starts_with('(') && filtered.ends_with(')') {
-            let val = i64::from_str(filtered.trim_matches(|c| c == '(' || c == ')'))?;
-            Ok(Money::from_thousands(-val))
-        } else {
-            let val = i64::from_str(&filtered)?;
-            Ok(Money::from_thousands(val))
-        }
-    }
-
-    fn parse_lines<Keys: GenericKeys>(
-        &self,
-        page_lines: &[String],
-        line_to_key: &HashMap<String, Keys>,
-    ) -> Result<Vec<ParsedLineInfo<Keys>>> {
-        let mut result = Vec::new();
-        for line in page_lines {
-            let tokens: Vec<&str> = line.split("  ").filter(|p| !p.is_empty()).collect();
-            if tokens.len() != 3 && tokens.len() != 4 {
-                log::info!("Skipping non-report line {:?}", tokens);
-                continue;
-            }
-            let line_token: String = tokens[0]
-                .to_lowercase()
-                .chars()
-                .map(|c| {
-                    // Leave only lowercase Russian, to strip OCR artifacts.
-                    if ('а'..='я').contains(&c) {
-                        return c;
-                    }
-                    ' '
-                })
-                .collect();
-            if let Some(key) = line_to_key.get(line_token.trim()) {
-                // Last element is the value of previous period.
-                // One before last - for current period.
-                // Two before last - optional reference to additional info in report.
-                let current_value_str = tokens[tokens.len() - 2];
-                let money = match Self::parse_money(current_value_str) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        return Err(eyre!("Error {} on line {}", e, line));
-                    }
-                };
-                result.push(ParsedLineInfo::<Keys> {
-                    key: *key,
-                    value: money,
-                    original_line: line.to_owned(),
-                });
-            } else {
-                log::warn!("Unknown line {:?}", line_token);
-            }
-        }
-        Ok(result)
-    }
-
     fn parse_non_current_assets(
         non_current_assets_lines: &[ParsedLineInfo<BalanceKeys>],
     ) -> Result<NonCurrentAssets> {
@@ -706,20 +628,26 @@ impl ReportParser {
     }
 
     pub fn parse_balance_report_batch(&self, page_lines: &[String]) -> Result<BalanceReport> {
-        self.parse_balance_report_generic::<BatchParserHelper<BalanceKeys>>(page_lines)
+        let parsed_lines =
+            lines_classifier::classify_lines::<BalanceKeys>(page_lines, &self.line_to_balance_key)?;
+
+        self.parse_balance_report_generic::<BatchParserHelper<BalanceKeys>>(parsed_lines)
     }
 
     pub fn parse_balance_report_interactive(&self, page_lines: &[String]) -> Result<BalanceReport> {
-        self.parse_balance_report_generic::<CombinedParseHelper<BalanceKeys>>(page_lines)
+        let parsed_lines =
+            lines_classifier::classify_lines::<BalanceKeys>(page_lines, &self.line_to_balance_key)?;
+
+        self.parse_balance_report_generic::<CombinedParseHelper<BalanceKeys>>(parsed_lines)
     }
 
-    fn parse_balance_report_generic<Helper>(&self, page_lines: &[String]) -> Result<BalanceReport>
+    fn parse_balance_report_generic<Helper>(
+        &self,
+        parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
+    ) -> Result<BalanceReport>
     where
         Helper: ParseHelper<BalanceKeys>,
     {
-        let parsed_lines =
-            self.parse_lines::<BalanceKeys>(page_lines, &self.line_to_balance_key)?;
-
         let mut helper = Helper::new(parsed_lines);
 
         let non_current_assets = helper.parse_next(
@@ -758,7 +686,8 @@ impl ReportParser {
     where
         Helper: ParseHelper<IncomeKeys>,
     {
-        let parsed_lines = self.parse_lines::<IncomeKeys>(page_lines, &self.line_to_income_key)?;
+        let parsed_lines =
+            lines_classifier::classify_lines::<IncomeKeys>(page_lines, &self.line_to_income_key)?;
 
         let mut helper = Helper::new(parsed_lines);
 
