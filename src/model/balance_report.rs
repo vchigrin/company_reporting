@@ -104,18 +104,6 @@ impl NonCurrentAssets {
     pub fn total(&self) -> Money {
         self.fixed_assets + self.non_material_assets + self.financial_assets + self.other
     }
-    pub fn fixed_assets(&self) -> Money {
-        self.fixed_assets
-    }
-    pub fn non_material_assets(&self) -> Money {
-        self.non_material_assets
-    }
-    pub fn financial_assets(&self) -> Money {
-        self.financial_assets
-    }
-    pub fn other(&self) -> Money {
-        self.other
-    }
 }
 
 impl CurrentAssets {
@@ -142,21 +130,6 @@ impl CurrentAssets {
             + self.financial_assets
             + self.other
     }
-    pub fn physical_inventory(&self) -> Money {
-        self.physical_inventory
-    }
-    pub fn accounts_receivable(&self) -> Money {
-        self.accounts_receivable
-    }
-    pub fn cash(&self) -> Money {
-        self.cash
-    }
-    pub fn financial_assets(&self) -> Money {
-        self.financial_assets
-    }
-    pub fn other(&self) -> Money {
-        self.other
-    }
 }
 
 impl Assets {
@@ -169,14 +142,6 @@ impl Assets {
 
     pub fn total(&self) -> Money {
         self.current.total() + self.non_current.total()
-    }
-
-    pub fn current(&self) -> &CurrentAssets {
-        &self.current
-    }
-
-    pub fn non_current(&self) -> &NonCurrentAssets {
-        &self.non_current
     }
 }
 
@@ -198,19 +163,6 @@ impl Equity {
     pub fn total(&self) -> Money {
         self.authorised_capital + self.capital_surplus + self.retained_earnings + self.other
     }
-
-    pub fn authorised_capital(&self) -> Money {
-        self.authorised_capital
-    }
-    pub fn capital_surplus(&self) -> Money {
-        self.capital_surplus
-    }
-    pub fn retained_earnings(&self) -> Money {
-        self.retained_earnings
-    }
-    pub fn other(&self) -> Money {
-        self.other
-    }
 }
 
 impl LongTermLiabilities {
@@ -223,15 +175,6 @@ impl LongTermLiabilities {
     }
     pub fn total(&self) -> Money {
         self.loans + self.accounts_payable + self.other
-    }
-    pub fn loans(&self) -> Money {
-        self.loans
-    }
-    pub fn accounts_payable(&self) -> Money {
-        self.accounts_payable
-    }
-    pub fn other(&self) -> Money {
-        self.other
     }
 }
 
@@ -246,15 +189,6 @@ impl CurrentLiabilities {
     pub fn total(&self) -> Money {
         self.loans + self.accounts_payable + self.other
     }
-    pub fn loans(&self) -> Money {
-        self.loans
-    }
-    pub fn accounts_payable(&self) -> Money {
-        self.accounts_payable
-    }
-    pub fn other(&self) -> Money {
-        self.other
-    }
 }
 
 impl Liabilities {
@@ -263,13 +197,6 @@ impl Liabilities {
     }
     pub fn total(&self) -> Money {
         self.current.total() + self.long_term.total()
-    }
-
-    pub fn long_term(&self) -> &LongTermLiabilities {
-        &self.long_term
-    }
-    pub fn current(&self) -> &CurrentLiabilities {
-        &self.current
     }
 }
 
@@ -288,17 +215,5 @@ impl BalanceReport {
             equity,
             liabilities,
         })
-    }
-
-    pub fn get_assets(&self) -> &Assets {
-        &self.assets
-    }
-
-    pub fn get_liabilities(&self) -> &Liabilities {
-        &self.liabilities
-    }
-
-    pub fn get_equity(&self) -> &Equity {
-        &self.equity
     }
 }

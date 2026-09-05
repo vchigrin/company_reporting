@@ -4,8 +4,6 @@ use std::str::FromStr;
 #[derive(PartialOrd, PartialEq, Eq, Ord, Copy, Clone, Debug, Hash)]
 pub enum PeriodType {
     FirstHalf,
-    // Non-standard, constructed from Full and FirstHalf periods.
-    SecondHalf,
     Full,
 }
 
@@ -23,39 +21,11 @@ impl Period {
         }
     }
 
-    pub fn second_half(year: i32) -> Self {
-        Self {
-            year,
-            period_type: PeriodType::SecondHalf,
-        }
-    }
-
     pub fn full(year: i32) -> Self {
         Self {
             year,
             period_type: PeriodType::Full,
         }
-    }
-
-    pub fn period_type(&self) -> PeriodType {
-        self.period_type
-    }
-
-    pub fn short_string(&self) -> String {
-        let mut result = String::new();
-        result.push_str(&self.year.to_string());
-        match self.period_type {
-            PeriodType::FirstHalf => {
-                result += "H1";
-            }
-            PeriodType::SecondHalf => {
-                result += "H2";
-            }
-            PeriodType::Full => {
-                result += "FULL";
-            }
-        }
-        result
     }
 
     pub fn from_short_string(s: &str) -> Result<Self> {

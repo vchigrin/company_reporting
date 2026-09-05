@@ -2,7 +2,6 @@ use eyre::{Result, eyre};
 use std::path;
 use std::path::Path;
 use std::process;
-use tempfile;
 
 fn make_png(pdf_file_path: &Path, page_number: i32, dst_dir: &path::Path) -> Result<path::PathBuf> {
     const TEMP_PNG_PREFIX: &str = "page";

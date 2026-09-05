@@ -61,14 +61,6 @@ impl Money {
             roubles: thousands * 1000,
         }
     }
-
-    pub fn from_roubles(roubles: i64) -> Money {
-        Self { roubles: roubles }
-    }
-
-    pub fn in_roubles(&self) -> i64 {
-        self.roubles
-    }
 }
 
 #[cfg(test)]
