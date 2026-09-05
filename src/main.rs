@@ -19,6 +19,8 @@ struct ParseReportArgs {
     page_number: i32,
     #[arg(long, action=clap::ArgAction::SetTrue)]
     interactive: bool,
+    #[arg(long)]
+    money_multiplier: model::MoneyMultiplier,
 }
 
 #[derive(Debug, Subcommand)]
@@ -42,18 +44,18 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
     match args.report_type {
         model::ReportType::Balance => {
             let report = if args.interactive {
-                parser.parse_balance_report_interactive(&page_lines)?
+                parser.parse_balance_report_interactive(&page_lines, args.money_multiplier)?
             } else {
-                parser.parse_balance_report_batch(&page_lines)?
+                parser.parse_balance_report_batch(&page_lines, args.money_multiplier)?
             };
             println!("Parsed balance {:?}", report);
             // TODO: save to DB.
         }
         model::ReportType::Income => {
             let report = if args.interactive {
-                parser.parse_income_report_interactive(&page_lines)?
+                parser.parse_income_report_interactive(&page_lines, args.money_multiplier)?
             } else {
-                parser.parse_income_report_batch(&page_lines)?
+                parser.parse_income_report_batch(&page_lines, args.money_multiplier)?
             };
             println!("Parsed income {:?}", report);
         }

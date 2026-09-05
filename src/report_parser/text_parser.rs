@@ -1,4 +1,3 @@
-use crate::model::Money;
 use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
     LongTermLiabilities, NonCurrentAssets,
@@ -6,12 +5,14 @@ use crate::model::balance_report::{
 use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
+use crate::model::{Money, MoneyMultiplier};
 use crate::report_parser::lines_classifier;
 use crate::report_parser::{GenericKeys, ParsedLineInfo};
 use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::io;
+use std::rc::Rc;
 use std::str::FromStr;
 use strum_macros::{EnumString, VariantArray};
 
@@ -328,8 +329,8 @@ fn parse_common_helper<Keys: GenericKeys>(
 }
 
 pub struct ReportParser {
-    line_to_balance_key: HashMap<String, BalanceKeys>,
-    line_to_income_key: HashMap<String, IncomeKeys>,
+    balance_keys_classifier: Rc<dyn lines_classifier::KeyClassifier<BalanceKeys>>,
+    income_keys_classifier: Rc<dyn lines_classifier::KeyClassifier<IncomeKeys>>,
 }
 
 impl ReportParser {
@@ -465,8 +466,12 @@ impl ReportParser {
             IncomeKeys::NetProfit,
         );
         Self {
-            line_to_balance_key,
-            line_to_income_key,
+            balance_keys_classifier: Rc::new(lines_classifier::MapKeyClasifier::new(
+                line_to_balance_key,
+            )),
+            income_keys_classifier: Rc::new(lines_classifier::MapKeyClasifier::new(
+                line_to_income_key,
+            )),
         }
     }
 
@@ -627,16 +632,30 @@ impl ReportParser {
         Ok(result)
     }
 
-    pub fn parse_balance_report_batch(&self, page_lines: &[String]) -> Result<BalanceReport> {
-        let parsed_lines =
-            lines_classifier::classify_lines::<BalanceKeys>(page_lines, &self.line_to_balance_key)?;
+    pub fn parse_balance_report_batch(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<BalanceReport> {
+        let classifier = lines_classifier::LinesClassifier::new(
+            money_multiplier,
+            self.balance_keys_classifier.clone(),
+        );
+        let parsed_lines = classifier.classify_lines(page_lines)?;
 
         self.parse_balance_report_generic::<BatchParserHelper<BalanceKeys>>(parsed_lines)
     }
 
-    pub fn parse_balance_report_interactive(&self, page_lines: &[String]) -> Result<BalanceReport> {
-        let parsed_lines =
-            lines_classifier::classify_lines::<BalanceKeys>(page_lines, &self.line_to_balance_key)?;
+    pub fn parse_balance_report_interactive(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<BalanceReport> {
+        let classifier = lines_classifier::LinesClassifier::new(
+            money_multiplier,
+            self.balance_keys_classifier.clone(),
+        );
+        let parsed_lines = classifier.classify_lines(page_lines)?;
 
         self.parse_balance_report_generic::<CombinedParseHelper<BalanceKeys>>(parsed_lines)
     }
@@ -682,12 +701,19 @@ impl ReportParser {
         )
     }
 
-    fn parse_income_report_generic<Helper>(&self, page_lines: &[String]) -> Result<IncomeReport>
+    fn parse_income_report_generic<Helper>(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<IncomeReport>
     where
         Helper: ParseHelper<IncomeKeys>,
     {
-        let parsed_lines =
-            lines_classifier::classify_lines::<IncomeKeys>(page_lines, &self.line_to_income_key)?;
+        let classifier = lines_classifier::LinesClassifier::new(
+            money_multiplier,
+            self.income_keys_classifier.clone(),
+        );
+        let parsed_lines = classifier.classify_lines(page_lines)?;
 
         let mut helper = Helper::new(parsed_lines);
 
@@ -716,12 +742,26 @@ impl ReportParser {
         ))
     }
 
-    pub fn parse_income_report_batch(&self, page_lines: &[String]) -> Result<IncomeReport> {
-        self.parse_income_report_generic::<BatchParserHelper<IncomeKeys>>(page_lines)
+    pub fn parse_income_report_batch(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<IncomeReport> {
+        self.parse_income_report_generic::<BatchParserHelper<IncomeKeys>>(
+            page_lines,
+            money_multiplier,
+        )
     }
 
-    pub fn parse_income_report_interactive(&self, page_lines: &[String]) -> Result<IncomeReport> {
-        self.parse_income_report_generic::<CombinedParseHelper<IncomeKeys>>(page_lines)
+    pub fn parse_income_report_interactive(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<IncomeReport> {
+        self.parse_income_report_generic::<CombinedParseHelper<IncomeKeys>>(
+            page_lines,
+            money_multiplier,
+        )
     }
 
     fn parse_gross_profit(

@@ -12,3 +12,9 @@ pub enum ReportType {
     Balance,
     Income,
 }
+
+#[derive(Debug, Clone, Copy, EnumString, IntoStaticStr)]
+pub enum MoneyMultiplier {
+    Thousands,
+    Millions,
+}
