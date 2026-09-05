@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub struct Money {
     roubles: i64,
 }

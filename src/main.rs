@@ -52,7 +52,11 @@ fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
             // TODO: save to DB.
         }
         model::ReportType::Income => {
-            let report = parser.parse_income_report(&page_lines)?;
+            let report = if args.interactive {
+                parser.parse_income_report_interactive(&page_lines)?
+            } else {
+                parser.parse_income_report_batch(&page_lines)?
+            };
             println!("Parsed income {:?}", report);
         }
     }
