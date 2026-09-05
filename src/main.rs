@@ -6,7 +6,7 @@ mod model;
 mod report_parser;
 
 #[derive(Debug, Args)]
-struct UpdateDbArgs {
+struct ParseReportArgs {
     #[arg(long)]
     company_name: String,
     #[arg(long, value_parser=model::Period::from_short_string)]
@@ -23,7 +23,7 @@ struct UpdateDbArgs {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    UpdateDb(UpdateDbArgs),
+    ParseReport(ParseReportArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -34,11 +34,9 @@ enum Command {
 struct CliParams {
     #[command(subcommand)]
     command: Command,
-    #[arg(long("db"))]
-    db_path: path::PathBuf,
 }
 
-fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
+fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
     let page_lines = report_parser::get_page_lines(&args.report_path, args.page_number)?;
     let parser = report_parser::ReportParser::new();
     match args.report_type {
@@ -63,16 +61,16 @@ fn process_update_db(db_path: &path::Path, args: &UpdateDbArgs) -> Result<()> {
     Ok(())
 }
 
-fn process_command(db_path: &path::Path, command: &Command) -> Result<()> {
+fn process_command(command: &Command) -> Result<()> {
     match command {
-        Command::UpdateDb(update_db_args) => process_update_db(db_path, update_db_args),
+        Command::ParseReport(args) => process_parse_report(args),
     }
 }
 
 fn do_main() -> Result<()> {
     let params = CliParams::parse();
     println!("Running with params {:?}", params);
-    process_command(&params.db_path, &params.command)?;
+    process_command(&params.command)?;
     Ok(())
 }
 
