@@ -6,6 +6,7 @@ use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
 use crate::model::{Money, MoneyMultiplier};
+use crate::report_parser::interactive_lines_editor::InteractiveLinesEditor;
 use crate::report_parser::lines_classifier;
 use crate::report_parser::{GenericKeys, ParsedLineInfo};
 use color_print::cprintln;
@@ -16,7 +17,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use strum_macros::{EnumString, VariantArray};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, VariantArray)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
 enum BalanceKeys {
     // Основные средства
     FixedAssets,
@@ -54,12 +55,14 @@ enum BalanceKeys {
     // Итого краткосрочные обязательства
     TotalCurrentLiabilities,
     // Прочее
+    #[default]
     Other,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, VariantArray)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
 enum IncomeKeys {
     // Выручка от реализации
+    #[default]
     SalesRevenue,
     // Ceбестоимость продаж
     CostOfSales,
@@ -643,7 +646,7 @@ impl ReportParser {
         );
         let parsed_lines = classifier.classify_lines(page_lines)?;
 
-        self.parse_balance_report_generic::<BatchParserHelper<BalanceKeys>>(parsed_lines)
+        self.parse_balance_report_generic(parsed_lines)
     }
 
     pub fn parse_balance_report_interactive(
@@ -656,18 +659,25 @@ impl ReportParser {
             self.balance_keys_classifier.clone(),
         );
         let parsed_lines = classifier.classify_lines(page_lines)?;
-
-        self.parse_balance_report_generic::<CombinedParseHelper<BalanceKeys>>(parsed_lines)
+        let mut editor = InteractiveLinesEditor::new(parsed_lines);
+        loop {
+            editor.run_editor()?;
+            match self.parse_balance_report_generic(editor.result_lines().clone()) {
+                Ok(balance) => {
+                    return Ok(balance);
+                }
+                Err(err) => {
+                    cprintln!("Failed parse report; Error <red>{}</red>", err);
+                }
+            }
+        }
     }
 
-    fn parse_balance_report_generic<Helper>(
+    fn parse_balance_report_generic(
         &self,
         parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
-    ) -> Result<BalanceReport>
-    where
-        Helper: ParseHelper<BalanceKeys>,
-    {
-        let mut helper = Helper::new(parsed_lines);
+    ) -> Result<BalanceReport> {
+        let mut helper = BatchParserHelper::new(parsed_lines);
 
         let non_current_assets = helper.parse_next(
             BalanceKeys::TotalNonCurrentAssets,

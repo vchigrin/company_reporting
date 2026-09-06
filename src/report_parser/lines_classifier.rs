@@ -114,8 +114,9 @@ mod tests {
     use super::*;
     use strum_macros::{EnumString, VariantArray};
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, VariantArray)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
     enum TestKeys {
+        #[default]
         Foo,
         Bar,
     }

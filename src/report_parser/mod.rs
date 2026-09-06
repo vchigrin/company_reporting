@@ -1,3 +1,4 @@
+mod interactive_lines_editor;
 mod lines_classifier;
 mod ocr;
 mod text_parser;
@@ -9,7 +10,7 @@ use crate::model::Money;
 use strum::VariantArray;
 
 trait GenericKeys:
-    PartialEq + Clone + Copy + std::fmt::Debug + std::str::FromStr + VariantArray
+    PartialEq + Clone + Copy + Default + std::fmt::Debug + std::str::FromStr + VariantArray
 {
 }
 
