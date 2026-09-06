@@ -55,12 +55,11 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
         if filtered == "-" {
             return Ok(Money::zero());
         }
-        let val;
-        if filtered.starts_with('(') && filtered.ends_with(')') {
-            val = -i64::from_str(filtered.trim_matches(|c| c == '(' || c == ')'))?;
+        let val = if filtered.starts_with('(') && filtered.ends_with(')') {
+            -i64::from_str(filtered.trim_matches(|c| c == '(' || c == ')'))?
         } else {
-            val = i64::from_str(&filtered)?;
-        }
+            i64::from_str(&filtered)?
+        };
         match self.money_multiplier {
             MoneyMultiplier::Thousands => Ok(Money::from_thousands(val)),
             MoneyMultiplier::Millions => Ok(Money::from_millions(val)),
@@ -98,7 +97,7 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
                     }
                 };
                 result.push(ParsedLineInfo::<Keys> {
-                    key: key,
+                    key,
                     value: money,
                     original_line: line.to_owned(),
                 });
