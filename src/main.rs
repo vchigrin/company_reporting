@@ -4,6 +4,18 @@ use std::path;
 
 mod model;
 mod report_parser;
+mod storage;
+
+// TODO(vchigrin): Add config or command line param or path in HOME directory...
+const DB_FILE_PATH: &str = "companies.db";
+
+#[derive(Debug, Args)]
+struct AddCompanyArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    inn: String,
+}
 
 #[derive(Debug, Args)]
 struct ParseReportArgs {
@@ -25,6 +37,7 @@ struct ParseReportArgs {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    AddCompany(AddCompanyArgs),
     ParseReport(ParseReportArgs),
 }
 
@@ -36,6 +49,17 @@ enum Command {
 struct CliParams {
     #[command(subcommand)]
     command: Command,
+}
+
+fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
+    let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+    let company = model::CompanyInfo {
+        name: args.name.clone(),
+        inn: args.inn.clone(),
+    };
+    db.save_company(&company)?;
+    println!("Saved company {:?}", company);
+    Ok(())
 }
 
 fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
@@ -67,6 +91,7 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
 
 fn process_command(command: &Command) -> Result<()> {
     match command {
+        Command::AddCompany(args) => process_add_company(args),
         Command::ParseReport(args) => process_parse_report(args),
     }
 }
