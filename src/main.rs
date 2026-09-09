@@ -43,19 +43,21 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
     let parser = report_parser::ReportParser::new();
     match args.report_type {
         model::ReportType::Balance => {
+            let parsed_lines = parser.classify_balance_lines(&page_lines, args.money_multiplier)?;
             let report = if args.interactive {
-                parser.parse_balance_report_interactive(&page_lines, args.money_multiplier)?
+                parser.parse_balance_report_interactive(parsed_lines)?
             } else {
-                parser.parse_balance_report_batch(&page_lines, args.money_multiplier)?
+                parser.parse_balance_report_batch(parsed_lines)?
             };
             println!("Parsed balance {:?}", report);
             // TODO: save to DB.
         }
         model::ReportType::Income => {
+            let parsed_lines = parser.classify_income_lines(&page_lines, args.money_multiplier)?;
             let report = if args.interactive {
-                parser.parse_income_report_interactive(&page_lines, args.money_multiplier)?
+                parser.parse_income_report_interactive(parsed_lines)?
             } else {
-                parser.parse_income_report_batch(&page_lines, args.money_multiplier)?
+                parser.parse_income_report_batch(parsed_lines)?
             };
             println!("Parsed income {:?}", report);
         }

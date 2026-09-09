@@ -1,3 +1,6 @@
+use super::interactive_lines_editor::InteractiveLinesEditor;
+use super::lines_classifier;
+use super::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
     LongTermLiabilities, NonCurrentAssets,
@@ -6,90 +9,10 @@ use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
 use crate::model::{Money, MoneyMultiplier};
-use crate::report_parser::interactive_lines_editor::InteractiveLinesEditor;
-use crate::report_parser::lines_classifier;
-use crate::report_parser::{GenericKeys, ParsedLineInfo};
 use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::rc::Rc;
-use strum_macros::{EnumString, VariantArray};
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
-enum BalanceKeys {
-    // Основные средства
-    FixedAssets,
-    // Нематериальные активы
-    NonMaterialAssets,
-    // Финансовые вложения
-    FinancialAssets,
-    // Итого - внеоборотные активы
-    TotalNonCurrentAssets,
-    // Итого - оборотные активы
-    TotalCurrentAssets,
-    // Итого - активы
-    // TotalAssets,
-    // Запасы
-    PhysicalInventory,
-    // Дебиторская задолженность
-    AccountsReceivable,
-    // Денежные средства и их эквиваленты
-    Cash,
-    // Уставной капитал
-    AuthorisedCapital,
-    // Добавочный капитал
-    CapitalSurplus,
-    // Нераспределённая прибыль (непокрытый убыток)
-    RetainedEarnings,
-    // итого капитал и резервы
-    TotalEquity,
-    // Кредиты и займы
-    Loans,
-    // Кредиторская задолженность
-    AccountsPayable,
-
-    // Итого долгосрочные обязательства
-    TotalLongTermLiabilities,
-    // Итого краткосрочные обязательства
-    TotalCurrentLiabilities,
-    // Прочее
-    #[default]
-    Other,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
-enum IncomeKeys {
-    // Выручка от реализации
-    #[default]
-    SalesRevenue,
-    // Ceбестоимость продаж
-    CostOfSales,
-    // Валовая прибыль
-    GrossProfit,
-    // Коммерческие расходы
-    CommercialExpenses,
-    // Управленческие расходы
-    ManagementExpenses,
-    // Операционная прибыль
-    OperationalProfit,
-    // Финансовые доходы
-    FinancialIncome,
-    // Финансовые расходы
-    FinancialExpenses,
-    // Прочие доходы
-    OtherIncome,
-    // Прочие расходы
-    OtherExpenses,
-    // Прибыль до налогообложения
-    ProfitBeforeTax,
-    // Налог на прибыль
-    ProfitTax,
-    // Чистая прибыль
-    NetProfit,
-}
-
-impl GenericKeys for BalanceKeys {}
-impl GenericKeys for IncomeKeys {}
 
 struct BatchParserHelper<Keys: GenericKeys> {
     analyzed_lines: Vec<ParsedLineInfo<Keys>>,
@@ -477,28 +400,15 @@ impl ReportParser {
 
     pub fn parse_balance_report_batch(
         &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
+        parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
     ) -> Result<BalanceReport> {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.balance_keys_classifier.clone(),
-        );
-        let parsed_lines = classifier.classify_lines(page_lines)?;
-
         self.parse_balance_report_generic(parsed_lines)
     }
 
     pub fn parse_balance_report_interactive(
         &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
+        parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
     ) -> Result<BalanceReport> {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.balance_keys_classifier.clone(),
-        );
-        let parsed_lines = classifier.classify_lines(page_lines)?;
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
             editor.run_editor()?;
@@ -511,6 +421,18 @@ impl ReportParser {
                 }
             }
         }
+    }
+
+    pub fn classify_balance_lines(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<Vec<ParsedLineInfo<BalanceKeys>>> {
+        let classifier = lines_classifier::LinesClassifier::new(
+            money_multiplier,
+            self.balance_keys_classifier.clone(),
+        );
+        classifier.classify_lines(page_lines)
     }
 
     fn parse_balance_report_generic(
@@ -584,27 +506,15 @@ impl ReportParser {
 
     pub fn parse_income_report_batch(
         &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
+        parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
     ) -> Result<IncomeReport> {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.income_keys_classifier.clone(),
-        );
-        let parsed_lines = classifier.classify_lines(page_lines)?;
         self.parse_income_report_generic(parsed_lines)
     }
 
     pub fn parse_income_report_interactive(
         &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
+        parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
     ) -> Result<IncomeReport> {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.income_keys_classifier.clone(),
-        );
-        let parsed_lines = classifier.classify_lines(page_lines)?;
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
             editor.run_editor()?;
@@ -617,6 +527,18 @@ impl ReportParser {
                 }
             }
         }
+    }
+
+    pub fn classify_income_lines(
+        &self,
+        page_lines: &[String],
+        money_multiplier: MoneyMultiplier,
+    ) -> Result<Vec<ParsedLineInfo<IncomeKeys>>> {
+        let classifier = lines_classifier::LinesClassifier::new(
+            money_multiplier,
+            self.income_keys_classifier.clone(),
+        );
+        classifier.classify_lines(page_lines)
     }
 
     fn parse_gross_profit(
