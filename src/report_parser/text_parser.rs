@@ -12,9 +12,7 @@ use crate::report_parser::{GenericKeys, ParsedLineInfo};
 use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::collections::HashMap;
-use std::io;
 use std::rc::Rc;
-use std::str::FromStr;
 use strum_macros::{EnumString, VariantArray};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
@@ -93,34 +91,12 @@ enum IncomeKeys {
 impl GenericKeys for BalanceKeys {}
 impl GenericKeys for IncomeKeys {}
 
-trait ParseHelper<Keys: GenericKeys> {
-    fn parse_next<TParseCb, TParseResult>(
-        &mut self,
-        delimeter_key: Keys,
-        cb: &TParseCb,
-    ) -> Result<TParseResult>
-    where
-        TParseCb: Fn(&[ParsedLineInfo<Keys>]) -> Result<TParseResult>;
-
-    fn new(analyzed_lines: Vec<ParsedLineInfo<Keys>>) -> Self;
-}
-
 struct BatchParserHelper<Keys: GenericKeys> {
     analyzed_lines: Vec<ParsedLineInfo<Keys>>,
     next_line_idx: usize,
 }
 
 impl<Keys: GenericKeys> BatchParserHelper<Keys> {
-    fn next_line_index(&self) -> usize {
-        self.next_line_idx
-    }
-
-    fn set_next_line_index(&mut self, new_val: usize) {
-        self.next_line_idx = new_val
-    }
-}
-
-impl<Keys: GenericKeys> ParseHelper<Keys> for BatchParserHelper<Keys> {
     fn new(analyzed_lines: Vec<ParsedLineInfo<Keys>>) -> Self {
         Self {
             analyzed_lines,
@@ -147,142 +123,6 @@ impl<Keys: GenericKeys> ParseHelper<Keys> for BatchParserHelper<Keys> {
         } else {
             Err(eyre!("Can not found line with {:?} key", delimeter_key))
         }
-    }
-}
-
-struct InteractiveParserHelper<Keys: GenericKeys> {
-    analyzed_lines: Vec<ParsedLineInfo<Keys>>,
-    next_line_idx: usize,
-}
-
-impl<Keys: GenericKeys> InteractiveParserHelper<Keys> {
-    fn read_string() -> Result<String> {
-        let stdin = io::stdin();
-        let mut buffer = String::new();
-        stdin.read_line(&mut buffer)?;
-        Ok(buffer.trim().to_owned())
-    }
-
-    fn take_next_item(&mut self) -> Result<ParsedLineInfo<Keys>> {
-        if self.next_line_idx < self.analyzed_lines.len() {
-            let result = self.analyzed_lines[self.next_line_idx].clone();
-            self.next_line_idx += 1;
-            Ok(result)
-        } else {
-            Err(eyre!("End of parsed lines reached"))
-        }
-    }
-
-    fn next_line_index(&self) -> usize {
-        self.next_line_idx
-    }
-
-    fn set_next_line_index(&mut self, new_val: usize) {
-        self.next_line_idx = new_val
-    }
-}
-
-impl<Keys: GenericKeys> ParseHelper<Keys> for InteractiveParserHelper<Keys> {
-    fn new(analyzed_lines: Vec<ParsedLineInfo<Keys>>) -> Self {
-        Self {
-            analyzed_lines,
-            next_line_idx: 0,
-        }
-    }
-
-    fn parse_next<TParseCb, TParseResult>(
-        &mut self,
-        delimeter_key: Keys,
-        cb: &TParseCb,
-    ) -> Result<TParseResult>
-    where
-        TParseCb: Fn(&[ParsedLineInfo<Keys>]) -> Result<TParseResult>,
-    {
-        let mut filtered_lines = Vec::new();
-        let mut cur_item = self.take_next_item()?;
-        loop {
-            cprintln!("\nLine <yellow>{}</yellow>", cur_item.original_line);
-            cprintln!(
-                "Key <green>{:?}</green>. Value <red>{}</red>",
-                cur_item.key,
-                cur_item.value
-            );
-            println!("k - change key. v - change value. Enter - Continue");
-            let cmd = Self::read_string()?;
-            match cmd.as_str() {
-                "" => {
-                    let should_finish = cur_item.key == delimeter_key;
-                    filtered_lines.push(cur_item);
-                    if should_finish {
-                        break;
-                    }
-                    cur_item = self.take_next_item()?;
-                }
-                "v" => {
-                    println!("Enter next value, in thousands or roubles:");
-                    let sum_str = Self::read_string()?;
-                    let sum = if let Ok(v) = i64::from_str(&sum_str) {
-                        v
-                    } else {
-                        cprintln!("<red>Failed parse {}</red>", sum_str);
-                        continue;
-                    };
-                    cur_item.value = Money::from_thousands(sum);
-                }
-                "k" => {
-                    println!("Enter next key (allowed {:?}):", Keys::VARIANTS);
-                    let key_str = Self::read_string()?;
-                    let key = if let Ok(v) = Keys::from_str(&key_str) {
-                        v
-                    } else {
-                        cprintln!("<red>Failed parse {}</red>", key_str);
-                        continue;
-                    };
-                    cur_item.key = key;
-                }
-                _ => {
-                    cprintln!("<red>Unknown command {}</red>", cmd);
-                }
-            }
-        }
-        cb(&filtered_lines)
-    }
-}
-
-struct CombinedParseHelper<Keys: GenericKeys> {
-    batch: BatchParserHelper<Keys>,
-    interactive: InteractiveParserHelper<Keys>,
-}
-
-impl<Keys: GenericKeys> ParseHelper<Keys> for CombinedParseHelper<Keys> {
-    fn new(analyzed_lines: Vec<ParsedLineInfo<Keys>>) -> Self {
-        let batch = BatchParserHelper::<Keys>::new(analyzed_lines.clone());
-        let interactive = InteractiveParserHelper::new(analyzed_lines);
-        Self { batch, interactive }
-    }
-
-    fn parse_next<TParseCb, TParseResult>(
-        &mut self,
-        delimeter_key: Keys,
-        cb: &TParseCb,
-    ) -> Result<TParseResult>
-    where
-        TParseCb: Fn(&[ParsedLineInfo<Keys>]) -> Result<TParseResult>,
-    {
-        match self.batch.parse_next(delimeter_key, cb) {
-            Ok(batch_result) => {
-                self.interactive
-                    .set_next_line_index(self.batch.next_line_index());
-                return Ok(batch_result);
-            }
-            Err(e) => {
-                log::info!("Failed parse till {delimeter_key:?} in batch mode. Error {e}");
-            }
-        }
-        let interactive_result = self.interactive.parse_next(delimeter_key, cb)?;
-        self.batch
-            .set_next_line_index(self.interactive.next_line_index());
-        Ok(interactive_result)
     }
 }
 
@@ -711,21 +551,11 @@ impl ReportParser {
         )
     }
 
-    fn parse_income_report_generic<Helper>(
+    fn parse_income_report_generic(
         &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
-    ) -> Result<IncomeReport>
-    where
-        Helper: ParseHelper<IncomeKeys>,
-    {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.income_keys_classifier.clone(),
-        );
-        let parsed_lines = classifier.classify_lines(page_lines)?;
-
-        let mut helper = Helper::new(parsed_lines);
+        parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
+    ) -> Result<IncomeReport> {
+        let mut helper = BatchParserHelper::<IncomeKeys>::new(parsed_lines);
 
         let gross_profit_segment =
             helper.parse_next(IncomeKeys::GrossProfit, &Self::parse_gross_profit)?;
@@ -757,10 +587,12 @@ impl ReportParser {
         page_lines: &[String],
         money_multiplier: MoneyMultiplier,
     ) -> Result<IncomeReport> {
-        self.parse_income_report_generic::<BatchParserHelper<IncomeKeys>>(
-            page_lines,
+        let classifier = lines_classifier::LinesClassifier::new(
             money_multiplier,
-        )
+            self.income_keys_classifier.clone(),
+        );
+        let parsed_lines = classifier.classify_lines(page_lines)?;
+        self.parse_income_report_generic(parsed_lines)
     }
 
     pub fn parse_income_report_interactive(
@@ -768,10 +600,23 @@ impl ReportParser {
         page_lines: &[String],
         money_multiplier: MoneyMultiplier,
     ) -> Result<IncomeReport> {
-        self.parse_income_report_generic::<CombinedParseHelper<IncomeKeys>>(
-            page_lines,
+        let classifier = lines_classifier::LinesClassifier::new(
             money_multiplier,
-        )
+            self.income_keys_classifier.clone(),
+        );
+        let parsed_lines = classifier.classify_lines(page_lines)?;
+        let mut editor = InteractiveLinesEditor::new(parsed_lines);
+        loop {
+            editor.run_editor()?;
+            match self.parse_income_report_generic(editor.result_lines().clone()) {
+                Ok(balance) => {
+                    return Ok(balance);
+                }
+                Err(err) => {
+                    cprintln!("Failed parse report; Error <red>{}</red>", err);
+                }
+            }
+        }
     }
 
     fn parse_gross_profit(
