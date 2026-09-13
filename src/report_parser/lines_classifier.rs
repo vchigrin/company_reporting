@@ -85,25 +85,25 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
                     ' '
                 })
                 .collect();
-            if let Some(key) = self.keys_classifier.try_classify_key(line_token.trim()) {
-                // Last element is the value of previous period.
-                // One before last - for current period.
-                // Two before last - optional reference to additional info in report.
-                let current_value_str = tokens[tokens.len() - 2];
-                let money = match self.parse_money(current_value_str) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        return Err(eyre!("Error {} on line {}", e, line));
-                    }
-                };
-                result.push(ParsedLineInfo::<Keys> {
-                    key,
-                    value: money,
-                    original_line: line.to_owned(),
-                });
-            } else {
-                log::warn!("Unknown line {:?}", line_token);
-            }
+            let key = self
+                .keys_classifier
+                .try_classify_key(line_token.trim())
+                .unwrap_or_default();
+            // Last element is the value of previous period.
+            // One before last - for current period.
+            // Two before last - optional reference to additional info in report.
+            let current_value_str = tokens[tokens.len() - 2];
+            let money = match self.parse_money(current_value_str) {
+                Ok(m) => m,
+                Err(e) => {
+                    return Err(eyre!("Error {} on line {}", e, line));
+                }
+            };
+            result.push(ParsedLineInfo::<Keys> {
+                key,
+                value: money,
+                original_line: line.to_owned(),
+            });
         }
         Ok(result)
     }
@@ -119,6 +119,7 @@ mod tests {
     )]
     enum TestKeys {
         #[default]
+        OtherDefault,
         Foo,
         Bar,
     }
@@ -181,13 +182,13 @@ mod tests {
 
         let parsed = classifier_k
             .classify_lines(&[
-                "unused 1  2   3   5".to_owned(),
                 " фу    1    12    34".to_owned(),
                 " фу         89     -".to_owned(),
                 " бар        -  (12)  ".to_owned(),
+                "unused 1  2   3   5".to_owned(),
             ])
             .unwrap();
-        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed.len(), 4);
         assert_eq!(parsed[0].key, TestKeys::Foo);
         assert_eq!(parsed[0].value.in_roubles(), 12000);
 
@@ -196,5 +197,8 @@ mod tests {
 
         assert_eq!(parsed[2].key, TestKeys::Bar);
         assert_eq!(parsed[2].value.in_roubles(), 0);
+
+        assert_eq!(parsed[3].key, TestKeys::OtherDefault);
+        assert_eq!(parsed[3].value.in_roubles(), 3000);
     }
 }

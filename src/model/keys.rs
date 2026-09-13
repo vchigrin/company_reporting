@@ -57,7 +57,6 @@ pub enum BalanceKeys {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray, IntoStaticStr)]
 pub enum IncomeKeys {
     // Выручка от реализации
-    #[default]
     SalesRevenue,
     // Ceбестоимость продаж
     CostOfSales,
@@ -74,6 +73,7 @@ pub enum IncomeKeys {
     // Финансовые расходы
     FinancialExpenses,
     // Прочие доходы
+    #[default]
     OtherIncome,
     // Прочие расходы
     OtherExpenses,
