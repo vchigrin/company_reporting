@@ -119,7 +119,7 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
             } else {
                 // Verify that lines are correct and Income can be constructed
                 // from this lines set.
-                parser.parse_balance_report_batch(parsed_lines.clone())?;
+                parser.parse_balance_report_batch(&parsed_lines)?;
                 parsed_lines
             };
             company_report.balance = Some(final_lines);
@@ -131,7 +131,7 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
             } else {
                 // Verify that lines are correct and Income can be constructed
                 // from this lines set.
-                parser.parse_income_report_batch(parsed_lines.clone())?;
+                parser.parse_income_report_batch(&parsed_lines)?;
                 parsed_lines
             };
             company_report.income = Some(final_lines);

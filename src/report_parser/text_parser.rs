@@ -14,13 +14,13 @@ use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-struct BatchParserHelper<Keys: GenericKeys> {
-    analyzed_lines: Vec<ParsedLineInfo<Keys>>,
+struct BatchParserHelper<'a, Keys: GenericKeys> {
+    analyzed_lines: &'a Vec<ParsedLineInfo<Keys>>,
     next_line_idx: usize,
 }
 
-impl<Keys: GenericKeys> BatchParserHelper<Keys> {
-    fn new(analyzed_lines: Vec<ParsedLineInfo<Keys>>) -> Self {
+impl<'a, Keys: GenericKeys> BatchParserHelper<'a, Keys> {
+    fn new(analyzed_lines: &'a Vec<ParsedLineInfo<Keys>>) -> Self {
         Self {
             analyzed_lines,
             next_line_idx: 0,
@@ -398,13 +398,6 @@ impl ReportParser {
         Ok(result)
     }
 
-    pub fn parse_balance_report_batch(
-        &self,
-        parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
-    ) -> Result<BalanceReport> {
-        self.parse_balance_report_generic(parsed_lines)
-    }
-
     pub fn parse_balance_report_interactive(
         &self,
         parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
@@ -412,7 +405,7 @@ impl ReportParser {
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
             editor.run_editor()?;
-            match self.parse_balance_report_generic(editor.result_lines().clone()) {
+            match self.parse_balance_report_batch(editor.result_lines()) {
                 Ok(_) => {
                     return Ok(editor.result_lines().clone());
                 }
@@ -435,9 +428,9 @@ impl ReportParser {
         classifier.classify_lines(page_lines)
     }
 
-    fn parse_balance_report_generic(
+    pub fn parse_balance_report_batch(
         &self,
-        parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
+        parsed_lines: &Vec<ParsedLineInfo<BalanceKeys>>,
     ) -> Result<BalanceReport> {
         let mut helper = BatchParserHelper::new(parsed_lines);
 
@@ -473,9 +466,9 @@ impl ReportParser {
         )
     }
 
-    fn parse_income_report_generic(
+    pub fn parse_income_report_batch(
         &self,
-        parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
+        parsed_lines: &Vec<ParsedLineInfo<IncomeKeys>>,
     ) -> Result<IncomeReport> {
         let mut helper = BatchParserHelper::<IncomeKeys>::new(parsed_lines);
 
@@ -504,13 +497,6 @@ impl ReportParser {
         ))
     }
 
-    pub fn parse_income_report_batch(
-        &self,
-        parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
-    ) -> Result<IncomeReport> {
-        self.parse_income_report_generic(parsed_lines)
-    }
-
     pub fn parse_income_report_interactive(
         &self,
         parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
@@ -518,7 +504,7 @@ impl ReportParser {
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
             editor.run_editor()?;
-            match self.parse_income_report_generic(editor.result_lines().clone()) {
+            match self.parse_income_report_batch(editor.result_lines()) {
                 Ok(_) => {
                     return Ok(editor.result_lines().clone());
                 }
