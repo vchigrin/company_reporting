@@ -1,5 +1,5 @@
-use clap::{Args, Parser, Subcommand};
-use eyre::Result;
+use clap::{ArgGroup, Args, Parser, Subcommand};
+use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::path;
 
@@ -20,9 +20,12 @@ struct AddCompanyArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("company").required(true).multiple(false).args(["inn", "name"])))]
 struct GetCompanyArgs {
     #[arg(long)]
-    inn: String,
+    inn: Option<String>,
+    #[arg(long)]
+    name: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -45,6 +48,12 @@ struct CliParams {
 
 fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
     let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+    if db.get_company_by_name(&args.name).is_ok() {
+        return Err(eyre!("Company with name {} already present", args.name));
+    }
+    if db.get_company_by_inn(&args.inn).is_ok() {
+        return Err(eyre!("Company with inn {} already present", args.inn));
+    }
     let company = model::CompanyInfo {
         name: args.name.clone(),
         inn: args.inn.clone(),
@@ -57,7 +66,13 @@ fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
 
 fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
     let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
-    let company = db.get_company_by_inn(&args.inn)?;
+    let company = match (&args.inn, &args.name) {
+        (Some(inn), None) => db.get_company_by_inn(inn)?,
+        (None, Some(name)) => db.get_company_by_name(name)?,
+        _ => {
+            panic!("Conflicting args passed");
+        }
+    };
     println!("Company: {} INN: {}", company.name, company.inn);
     let mut periods: Vec<_> = company.raw_reports.keys().collect();
     periods.sort();

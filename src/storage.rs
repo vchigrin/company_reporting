@@ -37,7 +37,7 @@ impl Storage {
                     "CREATE TABLE {}(
                    id INTEGER PRIMARY KEY,
                    inn TEXT NOT NULL UNIQUE,
-                   name TEXT NOT NULL
+                   name TEXT NOT NULL UNIQUE
                 );",
                     COMPANIES
                 ),
@@ -114,6 +114,19 @@ impl Storage {
         Ok(model::CompanyInfo {
             name,
             inn: inn.to_owned(),
+            raw_reports: self.load_reports(company_id)?,
+        })
+    }
+
+    pub fn get_company_by_name(&self, name: &str) -> Result<model::CompanyInfo> {
+        let (company_id, inn): (i64, String) = self.connection.query_row(
+            &format!("SELECT id, inn FROM {} WHERE name=?", COMPANIES),
+            [name],
+            |r| Ok((r.get_unwrap(0), r.get_unwrap(1))),
+        )?;
+        Ok(model::CompanyInfo {
+            name: name.to_owned(),
+            inn,
             raw_reports: self.load_reports(company_id)?,
         })
     }

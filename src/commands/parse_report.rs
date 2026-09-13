@@ -3,13 +3,16 @@ use eyre::{Result, eyre};
 use crate::model;
 use crate::report_parser;
 use crate::storage;
-use clap::Args;
+use clap::{ArgGroup, Args};
 use std::path;
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("company").required(true).multiple(false).args(["company_inn", "company_name"])))]
 pub struct ParseReportArgs {
     #[arg(long)]
-    company_inn: String,
+    company_inn: Option<String>,
+    #[arg(long)]
+    company_name: Option<String>,
     #[arg(long, value_parser=model::Period::from_short_string)]
     period: model::Period,
     #[arg(long)]
@@ -47,7 +50,13 @@ fn classify_income_lines(
 }
 
 pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -> Result<()> {
-    let mut company = db.get_company_by_inn(&args.company_inn)?;
+    let mut company = match (&args.company_inn, &args.company_name) {
+        (Some(inn), None) => db.get_company_by_inn(inn)?,
+        (None, Some(name)) => db.get_company_by_name(name)?,
+        _ => {
+            panic!("Conflicting args passed");
+        }
+    };
     let company_report: &mut model::RawReport = company.raw_reports.entry(args.period).or_default();
     match args.report_type {
         model::ReportType::Balance => {
