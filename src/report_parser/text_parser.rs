@@ -408,13 +408,13 @@ impl ReportParser {
     pub fn parse_balance_report_interactive(
         &self,
         parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
-    ) -> Result<BalanceReport> {
+    ) -> Result<Vec<ParsedLineInfo<BalanceKeys>>> {
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
             editor.run_editor()?;
             match self.parse_balance_report_generic(editor.result_lines().clone()) {
-                Ok(balance) => {
-                    return Ok(balance);
+                Ok(_) => {
+                    return Ok(editor.result_lines().clone());
                 }
                 Err(err) => {
                     cprintln!("Failed parse report; Error <red>{}</red>", err);
@@ -514,13 +514,13 @@ impl ReportParser {
     pub fn parse_income_report_interactive(
         &self,
         parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
-    ) -> Result<IncomeReport> {
+    ) -> Result<Vec<ParsedLineInfo<IncomeKeys>>> {
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
             editor.run_editor()?;
             match self.parse_income_report_generic(editor.result_lines().clone()) {
-                Ok(balance) => {
-                    return Ok(balance);
+                Ok(_) => {
+                    return Ok(editor.result_lines().clone());
                 }
                 Err(err) => {
                     cprintln!("Failed parse report; Error <red>{}</red>", err);

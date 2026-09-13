@@ -2,7 +2,7 @@ use super::keys::{BalanceKeys, IncomeKeys, ParsedLineInfo};
 use super::period::Period;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RawReport {
     pub balance: Option<Vec<ParsedLineInfo<BalanceKeys>>>,
     pub income: Option<Vec<ParsedLineInfo<IncomeKeys>>>,

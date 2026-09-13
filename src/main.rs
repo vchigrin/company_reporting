@@ -1,5 +1,5 @@
 use clap::{Args, Parser, Subcommand};
-use eyre::Result;
+use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::path;
 
@@ -27,7 +27,7 @@ struct GetCompanyArgs {
 #[derive(Debug, Args)]
 struct ParseReportArgs {
     #[arg(long)]
-    company_name: String,
+    company_inn: String,
     #[arg(long, value_parser=model::Period::from_short_string)]
     period: model::Period,
     #[arg(long)]
@@ -79,29 +79,51 @@ fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
 }
 
 fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
+    let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+    let mut company = db.get_company_by_inn(&args.company_inn)?;
+    let company_report: &mut model::RawReport = company.raw_reports.entry(args.period).or_default();
+    match args.report_type {
+        model::ReportType::Balance => {
+            if let Some(existing) = &company_report.balance {
+                return Err(eyre!("Balance already present; Value {:?}", existing));
+            }
+        }
+        model::ReportType::Income => {
+            if let Some(existing) = &company_report.income {
+                return Err(eyre!("Income already present; Value {:?}", existing));
+            }
+        }
+    }
+
     let page_lines = report_parser::get_page_lines(&args.report_path, args.page_number)?;
     let parser = report_parser::ReportParser::new();
     match args.report_type {
         model::ReportType::Balance => {
             let parsed_lines = parser.classify_balance_lines(&page_lines, args.money_multiplier)?;
-            let report = if args.interactive {
+            let final_lines = if args.interactive {
                 parser.parse_balance_report_interactive(parsed_lines)?
             } else {
-                parser.parse_balance_report_batch(parsed_lines)?
+                // Verify that lines are correct and Income can be constructed
+                // from this lines set.
+                parser.parse_balance_report_batch(parsed_lines.clone())?;
+                parsed_lines
             };
-            println!("Parsed balance {:?}", report);
-            // TODO: save to DB.
+            company_report.balance = Some(final_lines);
         }
         model::ReportType::Income => {
             let parsed_lines = parser.classify_income_lines(&page_lines, args.money_multiplier)?;
-            let report = if args.interactive {
+            let final_lines = if args.interactive {
                 parser.parse_income_report_interactive(parsed_lines)?
             } else {
-                parser.parse_income_report_batch(parsed_lines)?
+                // Verify that lines are correct and Income can be constructed
+                // from this lines set.
+                parser.parse_income_report_batch(parsed_lines.clone())?;
+                parsed_lines
             };
-            println!("Parsed income {:?}", report);
+            company_report.income = Some(final_lines);
         }
     }
+    db.save_company(&company)?;
     Ok(())
 }
 
