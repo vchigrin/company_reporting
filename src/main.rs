@@ -18,6 +18,12 @@ struct AddCompanyArgs {
 }
 
 #[derive(Debug, Args)]
+struct GetCompanyArgs {
+    #[arg(long)]
+    inn: String,
+}
+
+#[derive(Debug, Args)]
 struct ParseReportArgs {
     #[arg(long)]
     company_name: String,
@@ -38,6 +44,7 @@ struct ParseReportArgs {
 #[derive(Debug, Subcommand)]
 enum Command {
     AddCompany(AddCompanyArgs),
+    GetCompany(GetCompanyArgs),
     ParseReport(ParseReportArgs),
 }
 
@@ -59,6 +66,13 @@ fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
     };
     db.save_company(&company)?;
     println!("Saved company {:?}", company);
+    Ok(())
+}
+
+fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
+    let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+    let company = db.get_company_by_inn(&args.inn)?;
+    println!("Loaded company {:?}", company);
     Ok(())
 }
 
@@ -92,6 +106,7 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
 fn process_command(command: &Command) -> Result<()> {
     match command {
         Command::AddCompany(args) => process_add_company(args),
+        Command::GetCompany(args) => process_get_company(args),
         Command::ParseReport(args) => process_parse_report(args),
     }
 }
