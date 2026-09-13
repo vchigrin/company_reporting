@@ -1,6 +1,6 @@
 use crate::model::Money;
 use crate::model::MoneyMultiplier;
-use crate::report_parser::{GenericKeys, ParsedLineInfo};
+use crate::model::{GenericKeys, ParsedLineInfo};
 use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::rc::Rc;

@@ -1,6 +1,5 @@
 use crate::model;
-use crate::report_parser::ParsedLineInfo;
-use crate::report_parser::{BalanceKeys, GenericKeys, IncomeKeys};
+use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use eyre::Result;
 use rusqlite::{Connection, Transaction, named_params};
 use std::collections::HashMap;
@@ -407,9 +406,9 @@ mod tests {
         }
     }
 
-    fn compare_lines<Keys: crate::report_parser::GenericKeys>(
-        restored: &[crate::report_parser::ParsedLineInfo<Keys>],
-        expected: &[crate::report_parser::ParsedLineInfo<Keys>],
+    fn compare_lines<Keys: crate::model::GenericKeys>(
+        restored: &[crate::model::ParsedLineInfo<Keys>],
+        expected: &[crate::model::ParsedLineInfo<Keys>],
     ) {
         assert_eq!(restored.len(), expected.len());
         for (r, e) in restored.iter().zip(expected.iter()) {

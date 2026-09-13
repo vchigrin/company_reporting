@@ -1,7 +1,5 @@
+use super::keys::{BalanceKeys, IncomeKeys, ParsedLineInfo};
 use super::period::Period;
-use crate::report_parser::BalanceKeys;
-use crate::report_parser::IncomeKeys;
-use crate::report_parser::ParsedLineInfo;
 use std::collections::HashMap;
 
 #[derive(Debug)]

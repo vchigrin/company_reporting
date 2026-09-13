@@ -1,6 +1,5 @@
 use super::interactive_lines_editor::InteractiveLinesEditor;
 use super::lines_classifier;
-use super::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
     LongTermLiabilities, NonCurrentAssets,
@@ -8,6 +7,7 @@ use crate::model::balance_report::{
 use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
+use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crate::model::{Money, MoneyMultiplier};
 use color_print::cprintln;
 use eyre::{Result, eyre};

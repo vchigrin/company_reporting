@@ -1,5 +1,5 @@
-use crate::report_parser::Money;
-use crate::report_parser::{GenericKeys, ParsedLineInfo};
+use crate::model::Money;
+use crate::model::{GenericKeys, ParsedLineInfo};
 use color_print::{cprint, cprintln};
 use eyre::Result;
 use std::io;
