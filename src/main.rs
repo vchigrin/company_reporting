@@ -48,8 +48,7 @@ struct CliParams {
     command: Command,
 }
 
-fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
-    let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+fn process_add_company(db: &mut storage::Storage, args: &AddCompanyArgs) -> Result<()> {
     if db.get_company_by_name(&args.name).is_ok() {
         return Err(eyre!("Company with name {} already present", args.name));
     }
@@ -66,8 +65,7 @@ fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
     Ok(())
 }
 
-fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
-    let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+fn process_get_company(db: &mut storage::Storage, args: &GetCompanyArgs) -> Result<()> {
     let company = match (&args.inn, &args.name) {
         (Some(inn), None) => db.get_company_by_inn(inn)?,
         (None, Some(name)) => db.get_company_by_name(name)?,
@@ -93,8 +91,7 @@ fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
     Ok(())
 }
 
-fn process_list_companies() -> Result<()> {
-    let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+fn process_list_companies(db: &mut storage::Storage) -> Result<()> {
     for company in db.list_companies()? {
         println!("Company: {} INN: {}", company.name, company.inn);
     }
@@ -102,22 +99,16 @@ fn process_list_companies() -> Result<()> {
 }
 
 fn process_command(command: &Command) -> Result<()> {
+    let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
     match command {
-        Command::AddCompany(args) => process_add_company(args),
-        Command::GetCompany(args) => process_get_company(args),
-        Command::ListCompanies => process_list_companies(),
+        Command::AddCompany(args) => process_add_company(&mut db, args),
+        Command::GetCompany(args) => process_get_company(&mut db, args),
+        Command::ListCompanies => process_list_companies(&mut db),
         Command::UpdateDictFromReports(args) => {
-            let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
             commands::process_update_reports_dict(args, &mut db)
         }
-        Command::EditReport(args) => {
-            let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
-            commands::process_edit_report(args, &mut db)
-        }
-        Command::ParseReport(args) => {
-            let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
-            commands::process_parse_report(args, &mut db)
-        }
+        Command::EditReport(args) => commands::process_edit_report(args, &mut db),
+        Command::ParseReport(args) => commands::process_parse_report(args, &mut db),
     }
 }
 
