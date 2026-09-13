@@ -96,7 +96,8 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
             let money = match self.parse_money(current_value_str) {
                 Ok(m) => m,
                 Err(e) => {
-                    return Err(eyre!("Error {} on line {}", e, line));
+                    log::warn!("Error {} on line {}; Skipping", e, line);
+                    continue;
                 }
             };
             result.push(ParsedLineInfo::<Keys> {
