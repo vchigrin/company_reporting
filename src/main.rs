@@ -33,6 +33,7 @@ enum Command {
     AddCompany(AddCompanyArgs),
     GetCompany(GetCompanyArgs),
     ListCompanies,
+    UpdateDictFromReports(commands::UpdateReportsDictArgs),
     EditReport(commands::EditReportArgs),
     ParseReport(commands::ParseReportArgs),
 }
@@ -105,6 +106,10 @@ fn process_command(command: &Command) -> Result<()> {
         Command::AddCompany(args) => process_add_company(args),
         Command::GetCompany(args) => process_get_company(args),
         Command::ListCompanies => process_list_companies(),
+        Command::UpdateDictFromReports(args) => {
+            let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+            commands::process_update_reports_dict(args, &mut db)
+        }
         Command::EditReport(args) => {
             let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
             commands::process_edit_report(args, &mut db)

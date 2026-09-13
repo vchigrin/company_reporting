@@ -13,6 +13,7 @@ pub struct Storage {
 const COMPANIES: &str = "companies";
 const REPORTS: &str = "reports";
 const REPORT_LINES: &str = "report_lines";
+const REPORT_KEYS_DICT: &str = "report_keys_dict";
 
 impl Storage {
     pub fn new_with_file(path: &Path) -> Result<Self> {
@@ -75,6 +76,20 @@ impl Storage {
                 [],
             )?;
         }
+        if !self.connection.table_exists(None, REPORT_KEYS_DICT)? {
+            self.connection.execute(
+                &format!(
+                    "CREATE TABLE {}(
+                   id INTEGER PRIMARY KEY,
+                   report_type TEXT NOT NULL,
+                   report_string TEXT NOT NULL,
+                   key TEXT NOT NULL
+                );",
+                    REPORT_KEYS_DICT
+                ),
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -129,6 +144,68 @@ impl Storage {
             inn,
             raw_reports: self.load_reports(company_id)?,
         })
+    }
+
+    pub fn load_keys_dict<Keys: GenericKeys>(
+        &self,
+        report_type: model::ReportType,
+    ) -> Result<HashMap<String, Keys>> {
+        let report_type_str: &'static str = report_type.into();
+        let mut stmt = self
+            .connection
+            .prepare(&format!(
+                "SELECT report_string, key FROM {} WHERE report_type = $report_type",
+                REPORT_KEYS_DICT
+            ))
+            .unwrap();
+        let mut rows = stmt
+            .query(named_params! {"$report_type": report_type_str})
+            .unwrap();
+        let mut result = HashMap::new();
+        while let Some(row) = rows.next().unwrap() {
+            let report_string = row.get::<usize, String>(0)?;
+            let key_str = row.get::<usize, String>(1)?;
+            let key = Keys::from_str(&key_str)?;
+            result.insert(report_string, key);
+        }
+        Ok(result)
+    }
+
+    pub fn overwrite_keys_dict<Keys: GenericKeys>(
+        &mut self,
+        report_type: model::ReportType,
+        dict: &HashMap<String, Keys>,
+    ) -> Result<()> {
+        let report_type_str: &'static str = report_type.into();
+        let tx = self.connection.transaction()?;
+        tx.execute(
+            &format!(
+                "DELETE FROM {} WHERE report_type = $report_type",
+                REPORT_KEYS_DICT
+            ),
+            named_params! {"$report_type": report_type_str},
+        )?;
+        let mut insert_stmt = tx
+            .prepare(&format!(
+                "INSERT INTO {} (report_type, report_string, key) VALUES(
+                   $report_type,
+                   $report_string,
+                   $key
+                )",
+                REPORT_KEYS_DICT
+            ))
+            .unwrap();
+        for (report_string, key) in dict {
+            let key_str: &'static str = (*key).into();
+            insert_stmt.execute(named_params! {
+               "$report_type": report_type_str,
+               "$report_string": report_string,
+               "$key": key_str,
+            })?;
+        }
+        drop(insert_stmt);
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn list_companies(&self) -> Result<Vec<model::CompanyInfo>> {
@@ -322,6 +399,65 @@ mod tests {
     #[test]
     fn creation_in_memory() {
         Storage::new_in_memory().expect("Failed create DB");
+    }
+
+    #[test]
+    fn load_keys_dict() {
+        let storage = Storage::new_in_memory().expect("Failed create DB");
+        let balance_dict = storage
+            .load_keys_dict::<BalanceKeys>(model::ReportType::Balance)
+            .expect("Failed load balance dict");
+        let income_dict = storage
+            .load_keys_dict::<IncomeKeys>(model::ReportType::Income)
+            .expect("Failed load income dict");
+        // Empty DB must yield empty dicts.
+        assert!(balance_dict.is_empty());
+        assert!(income_dict.is_empty());
+    }
+
+    #[test]
+    fn overwrite_keys_dict() {
+        let mut storage = Storage::new_in_memory().expect("Failed create DB");
+
+        let mut balance_dict = HashMap::new();
+        balance_dict.insert("основные средства".to_owned(), BalanceKeys::FixedAssets);
+        balance_dict.insert("денежные средства".to_owned(), BalanceKeys::Cash);
+
+        let mut income_dict = HashMap::new();
+        income_dict.insert("выручка от реализации".to_owned(), IncomeKeys::SalesRevenue);
+        income_dict.insert("чистая прибыль".to_owned(), IncomeKeys::NetProfit);
+
+        storage
+            .overwrite_keys_dict(model::ReportType::Balance, &balance_dict)
+            .expect("Failed overwrite balance dict");
+        storage
+            .overwrite_keys_dict(model::ReportType::Income, &income_dict)
+            .expect("Failed overwrite income dict");
+
+        let loaded_balance = storage
+            .load_keys_dict::<BalanceKeys>(model::ReportType::Balance)
+            .expect("Failed load balance dict");
+        assert_eq!(loaded_balance, balance_dict);
+
+        let loaded_income = storage
+            .load_keys_dict::<IncomeKeys>(model::ReportType::Income)
+            .expect("Failed load income dict");
+        assert_eq!(loaded_income, income_dict);
+
+        // Overwriting balance must replace previous rows and leave income intact.
+        let mut new_balance_dict = HashMap::new();
+        new_balance_dict.insert("запасы".to_owned(), BalanceKeys::PhysicalInventory);
+        storage
+            .overwrite_keys_dict(model::ReportType::Balance, &new_balance_dict)
+            .expect("Failed overwrite balance dict again");
+        let loaded_balance = storage
+            .load_keys_dict::<BalanceKeys>(model::ReportType::Balance)
+            .expect("Failed load balance dict");
+        assert_eq!(loaded_balance, new_balance_dict);
+        let loaded_income = storage
+            .load_keys_dict::<IncomeKeys>(model::ReportType::Income)
+            .expect("Failed load income dict");
+        assert_eq!(loaded_income, income_dict);
     }
 
     #[test]

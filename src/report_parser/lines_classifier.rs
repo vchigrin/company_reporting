@@ -66,28 +66,38 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
         }
     }
 
+    pub fn split_line_to_tokens(line: &str) -> Vec<&str> {
+        line.split("  ").filter(|p| !p.is_empty()).collect()
+    }
+
+    pub fn get_line_token(tokens: &[&str]) -> String {
+        tokens[0]
+            .to_lowercase()
+            .chars()
+            .map(|c| {
+                // Leave only lowercase Russian, to strip OCR artifacts.
+                if ('а'..='я').contains(&c) {
+                    return c;
+                }
+                ' '
+            })
+            .collect::<String>()
+            .trim()
+            .to_owned()
+    }
+
     pub fn classify_lines(&self, page_lines: &[String]) -> Result<Vec<ParsedLineInfo<Keys>>> {
         let mut result = Vec::new();
         for line in page_lines {
-            let tokens: Vec<&str> = line.split("  ").filter(|p| !p.is_empty()).collect();
+            let tokens: Vec<&str> = Self::split_line_to_tokens(line);
             if tokens.len() != 3 && tokens.len() != 4 {
                 log::info!("Skipping non-report line {:?}", tokens);
                 continue;
             }
-            let line_token: String = tokens[0]
-                .to_lowercase()
-                .chars()
-                .map(|c| {
-                    // Leave only lowercase Russian, to strip OCR artifacts.
-                    if ('а'..='я').contains(&c) {
-                        return c;
-                    }
-                    ' '
-                })
-                .collect();
+            let line_token: String = Self::get_line_token(&tokens);
             let key = self
                 .keys_classifier
-                .try_classify_key(line_token.trim())
+                .try_classify_key(&line_token)
                 .unwrap_or_default();
             // Last element is the value of previous period.
             // One before last - for current period.
