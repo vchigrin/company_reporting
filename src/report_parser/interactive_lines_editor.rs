@@ -150,7 +150,7 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
     fn edit_line(&self, line: &mut ParsedLineInfo<Keys>) -> Result<ProcessCommandResult> {
         loop {
             Self::print_line(line);
-            println!("k - change key. v - change value. Enter - Continue");
+            println!("k - change key. v - change value. r - change raw line Enter - Continue");
             let cmd = read_string()?;
             if Self::process_edit_line_command(&cmd, line)? == ProcessCommandResult::FinishEditing {
                 return Ok(ProcessCommandResult::Edited);
@@ -186,6 +186,12 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
                     return Ok(ProcessCommandResult::WrongCommand);
                 };
                 line.key = key;
+                Ok(ProcessCommandResult::Edited)
+            }
+            "r" => {
+                println!("Enter next raw line:");
+                let value_str = read_string()?;
+                line.original_line = value_str.trim().to_owned();
                 Ok(ProcessCommandResult::Edited)
             }
             _ => Ok(ProcessCommandResult::WrongCommand),
