@@ -46,6 +46,7 @@ struct ParseReportArgs {
 enum Command {
     AddCompany(AddCompanyArgs),
     GetCompany(GetCompanyArgs),
+    ListCompanies,
     ParseReport(ParseReportArgs),
 }
 
@@ -83,7 +84,7 @@ fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
         let has_balance = report.balance.is_some();
         let has_income = report.income.is_some();
         println!(
-            "{}; Has balance? {}; Has income report? {}",
+            "    {}; Has balance? {}; Has income report? {}",
             period.short_string(),
             has_balance,
             has_income
@@ -141,10 +142,19 @@ fn process_parse_report(args: &ParseReportArgs) -> Result<()> {
     Ok(())
 }
 
+fn process_list_companies() -> Result<()> {
+    let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+    for company in db.list_companies()? {
+        println!("Company: {} INN: {}", company.name, company.inn);
+    }
+    Ok(())
+}
+
 fn process_command(command: &Command) -> Result<()> {
     match command {
         Command::AddCompany(args) => process_add_company(args),
         Command::GetCompany(args) => process_get_company(args),
+        Command::ListCompanies => process_list_companies(),
         Command::ParseReport(args) => process_parse_report(args),
     }
 }

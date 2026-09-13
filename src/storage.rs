@@ -118,6 +118,26 @@ impl Storage {
         })
     }
 
+    pub fn list_companies(&self) -> Result<Vec<model::CompanyInfo>> {
+        let mut stmt = self
+            .connection
+            .prepare(&format!("SELECT id, inn, name FROM {}", COMPANIES))
+            .unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        let mut result = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let company_id = row.get::<usize, i64>(0)?;
+            let inn = row.get::<usize, String>(1)?;
+            let name = row.get::<usize, String>(2)?;
+            result.push(model::CompanyInfo {
+                name,
+                inn,
+                raw_reports: self.load_reports(company_id)?,
+            });
+        }
+        Ok(result)
+    }
+
     fn overwrite_report_lines<'a, Key: GenericKeys>(
         tx: &Transaction<'a>,
         report_id: i64,
