@@ -72,7 +72,6 @@ impl Money {
         Self { roubles }
     }
 
-    #[cfg(test)]
     pub fn in_roubles(&self) -> i64 {
         self.roubles
     }

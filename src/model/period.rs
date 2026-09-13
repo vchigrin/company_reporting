@@ -28,6 +28,20 @@ impl Period {
         }
     }
 
+    pub fn short_string(&self) -> String {
+        let mut result = String::new();
+        result.push_str(&self.year.to_string());
+        match self.period_type {
+            PeriodType::FirstHalf => {
+                result += "H1";
+            }
+            PeriodType::Full => {
+                result += "FULL";
+            }
+        }
+        result
+    }
+
     pub fn from_short_string(s: &str) -> Result<Self> {
         if let Some(non_digit) = s.find(|c: char| !c.is_ascii_digit()) {
             let year_str = &s[..non_digit];

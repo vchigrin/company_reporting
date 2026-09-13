@@ -112,9 +112,11 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strum_macros::{EnumString, VariantArray};
+    use strum_macros::{EnumString, IntoStaticStr, VariantArray};
 
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
+    #[derive(
+        Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, IntoStaticStr, VariantArray,
+    )]
     enum TestKeys {
         #[default]
         Foo,

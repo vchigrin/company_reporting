@@ -8,14 +8,21 @@ pub use text_parser::ReportParser;
 
 use crate::model::Money;
 use strum::VariantArray;
-use strum_macros::{EnumString, VariantArray};
+use strum_macros::{EnumString, IntoStaticStr, VariantArray};
 
 pub trait GenericKeys:
-    PartialEq + Clone + Copy + Default + std::fmt::Debug + std::str::FromStr + VariantArray
+    PartialEq
+    + Clone
+    + Copy
+    + Default
+    + std::fmt::Debug
+    + std::str::FromStr<Err = strum::ParseError>
+    + VariantArray
+    + std::convert::Into<&'static str>
 {
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray, IntoStaticStr)]
 pub enum BalanceKeys {
     // Основные средства
     FixedAssets,
@@ -57,7 +64,7 @@ pub enum BalanceKeys {
     Other,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray, IntoStaticStr)]
 pub enum IncomeKeys {
     // Выручка от реализации
     #[default]

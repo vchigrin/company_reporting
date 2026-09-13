@@ -1,13 +1,19 @@
 use crate::model;
+use crate::report_parser::ParsedLineInfo;
+use crate::report_parser::{BalanceKeys, GenericKeys, IncomeKeys};
 use eyre::Result;
-use rusqlite::{Connection, named_params};
+use rusqlite::{Connection, Transaction, named_params};
+use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 
 pub struct Storage {
     connection: Connection,
 }
 
 const COMPANIES: &str = "companies";
+const REPORTS: &str = "reports";
+const REPORT_LINES: &str = "report_lines";
 
 impl Storage {
     pub fn new_with_file(path: &Path) -> Result<Self> {
@@ -39,11 +45,63 @@ impl Storage {
                 [],
             )?;
         }
+        if !self.connection.table_exists(None, REPORTS)? {
+            self.connection.execute(
+                &format!(
+                    "CREATE TABLE {}(
+                   report_id INTEGER PRIMARY KEY,
+                   company_id INTEGER NOT NULL,
+                   report_type TEXT NOT NULL,
+                   report_period TEXT NOT NULL,
+                   CONSTRAINT unique_report UNIQUE (company_id, report_type, report_period)
+                );",
+                    REPORTS
+                ),
+                [],
+            )?;
+        }
+        if !self.connection.table_exists(None, REPORT_LINES)? {
+            self.connection.execute(
+                &format!(
+                    "CREATE TABLE {}(
+                   report_line_id INTEGER PRIMARY KEY,
+                   report_id INTEGER NOT NULL,
+                   key TEXT NOT NULL,
+                   amount_roubles INTEGER NOT NULL,
+                   original_line TEXT
+                );",
+                    REPORT_LINES
+                ),
+                [],
+            )?;
+        }
         Ok(())
     }
 
-    pub fn save_company(&self, company: &model::CompanyInfo) -> Result<()> {
-        let company_id = self.insert_and_get_company_id(company)?;
+    pub fn save_company(&mut self, company: &model::CompanyInfo) -> Result<()> {
+        let tx = self.connection.transaction()?;
+        let company_id = Self::insert_and_get_company_id(&tx, company)?;
+        for (key, report) in &company.raw_reports {
+            if let Some(lines) = &report.balance {
+                let report_id = Self::insert_and_get_report_id(
+                    &tx,
+                    company_id,
+                    key,
+                    model::ReportType::Balance,
+                )?;
+                Self::overwrite_report_lines::<BalanceKeys>(&tx, report_id, lines)?;
+            }
+            if let Some(lines) = &report.income {
+                let report_id = Self::insert_and_get_report_id(
+                    &tx,
+                    company_id,
+                    key,
+                    model::ReportType::Income,
+                )?;
+                Self::overwrite_report_lines::<IncomeKeys>(&tx, report_id, lines)?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -56,10 +114,149 @@ impl Storage {
         Ok(model::CompanyInfo {
             name,
             inn: inn.to_owned(),
+            raw_reports: self.load_reports(company_id)?,
         })
     }
 
-    fn insert_and_get_company_id(&self, company: &model::CompanyInfo) -> Result<i64> {
+    fn overwrite_report_lines<'a, Key: GenericKeys>(
+        tx: &Transaction<'a>,
+        report_id: i64,
+        lines: &[ParsedLineInfo<Key>],
+    ) -> Result<()> {
+        let drop_query = format!("DELETE FROM {} WHERE report_id = $report_id;", REPORT_LINES);
+        tx.execute(
+            &drop_query,
+            named_params! {
+               "$report_id": report_id,
+            },
+        )?;
+        let mut insert_stmt = tx
+            .prepare(&format!(
+                "INSERT INTO {} (report_id, key, amount_roubles, original_line) VALUES(
+                   $report_id,
+                   $key,
+                   $amount_roubles,
+                   $original_line
+                )",
+                REPORT_LINES
+            ))
+            .unwrap();
+        for line in lines {
+            let key_str: &'static str = line.key.into();
+            insert_stmt.execute(named_params! {
+               "$report_id": report_id,
+               "$key": key_str,
+               "$amount_roubles": line.value.in_roubles(),
+               "$original_line": line.original_line,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn load_reports(&self, company_id: i64) -> Result<HashMap<model::Period, model::RawReport>> {
+        let mut stmt = self.connection.prepare(&format!(
+            "SELECT report_id, report_type, report_period FROM {} WHERE company_id = $company_id",
+            REPORTS
+        )).unwrap();
+        let mut rows = stmt
+            .query(named_params! {"$company_id": company_id})
+            .unwrap();
+        let mut result = HashMap::<model::Period, model::RawReport>::new();
+        while let Some(row) = rows.next().unwrap() {
+            let report_id = row.get::<usize, i64>(0)?;
+            let report_type_str = row.get::<usize, String>(1)?;
+            let report_period_str = row.get::<usize, String>(2)?;
+            let report_type = model::ReportType::from_str(&report_type_str)?;
+
+            let report_period = model::Period::from_short_string(&report_period_str)?;
+            if let Some(r) = result.get_mut(&report_period) {
+                self.fill_raw_report(r, report_type, report_id)?;
+            } else {
+                let mut new_report = model::RawReport {
+                    balance: None,
+                    income: None,
+                };
+                self.fill_raw_report(&mut new_report, report_type, report_id)?;
+                result.insert(report_period, new_report);
+            }
+        }
+        Ok(result)
+    }
+
+    fn fill_raw_report(
+        &self,
+        r: &mut model::RawReport,
+        report_type: model::ReportType,
+        report_id: i64,
+    ) -> Result<()> {
+        match report_type {
+            model::ReportType::Balance => {
+                assert!(r.balance.is_none());
+                let lines = self.load_report_lines::<BalanceKeys>(report_id)?;
+                r.balance = Some(lines);
+            }
+            model::ReportType::Income => {
+                assert!(r.income.is_none());
+                let lines = self.load_report_lines::<IncomeKeys>(report_id)?;
+                r.income = Some(lines);
+            }
+        }
+        Ok(())
+    }
+
+    fn load_report_lines<Keys: GenericKeys>(
+        &self,
+        report_id: i64,
+    ) -> Result<Vec<ParsedLineInfo<Keys>>> {
+        let mut stmt = self
+            .connection
+            .prepare(&format!(
+                "SELECT key, amount_roubles, original_line FROM {} WHERE report_id = $report_id",
+                REPORT_LINES
+            ))
+            .unwrap();
+        let mut rows = stmt.query(named_params! {"$report_id": report_id}).unwrap();
+        let mut result = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let key_str = row.get::<usize, String>(0)?;
+            let amount_roubles = row.get::<usize, i64>(1)?;
+            let original_line = row.get::<usize, String>(2)?;
+            let key = Keys::from_str(&key_str)?;
+            result.push(ParsedLineInfo::<Keys> {
+                key,
+                value: model::Money::from_roubles(amount_roubles),
+                original_line,
+            });
+        }
+        Ok(result)
+    }
+
+    fn insert_and_get_report_id<'a>(
+        tx: &Transaction<'a>,
+        company_id: i64,
+        period: &model::Period,
+        report_type: model::ReportType,
+    ) -> Result<i64> {
+        let query = format!(
+            "INSERT OR REPLACE INTO {} (company_id, report_type, report_period)
+             VALUES($company_id, $report_type, $report_period)
+             RETURNING report_id;",
+            REPORTS
+        );
+        let report_type_str: &'static str = report_type.into();
+        let res: i64 = tx.query_one(
+            &query,
+            named_params! {
+               "$company_id": company_id,
+               "$report_type": report_type_str,
+               "$report_period": period.short_string(),
+            },
+            |r| r.get(0),
+        )?;
+        Ok(res)
+    }
+
+    fn insert_and_get_company_id(tx: &Transaction, company: &model::CompanyInfo) -> Result<i64> {
         let query = format!(
             "INSERT INTO {} (inn, name)
              VALUES($inn, $name)
@@ -70,7 +267,7 @@ impl Storage {
              RETURNING id;",
             COMPANIES
         );
-        let res: i64 = self.connection.query_one(
+        let res: i64 = tx.query_one(
             &query,
             named_params! {
                "$inn": company.inn,
@@ -96,10 +293,11 @@ mod tests {
         let tmp_dir = tempfile::TempDir::new().unwrap();
         let db_path = tmp_dir.path().join("test.db");
         {
-            let storage = Storage::new_with_file(&db_path).expect("Failed create DB");
+            let mut storage = Storage::new_with_file(&db_path).expect("Failed create DB");
             let company = model::CompanyInfo {
                 name: "foo".to_owned(),
                 inn: "123".to_owned(),
+                raw_reports: HashMap::default(),
             };
             storage
                 .save_company(&company)

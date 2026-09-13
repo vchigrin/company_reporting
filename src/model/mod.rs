@@ -4,7 +4,7 @@ pub mod income_report;
 mod money;
 mod period;
 
-pub use company::CompanyInfo;
+pub use company::{CompanyInfo, RawReport};
 pub use money::Money;
 pub use period::Period;
 use strum_macros::{EnumString, IntoStaticStr};

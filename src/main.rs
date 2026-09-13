@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use eyre::Result;
+use std::collections::HashMap;
 use std::path;
 
 mod model;
@@ -59,10 +60,11 @@ struct CliParams {
 }
 
 fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
-    let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
+    let mut db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
     let company = model::CompanyInfo {
         name: args.name.clone(),
         inn: args.inn.clone(),
+        raw_reports: HashMap::default(),
     };
     db.save_company(&company)?;
     println!("Saved company {:?}", company);
