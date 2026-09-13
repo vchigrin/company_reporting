@@ -1,5 +1,6 @@
 use super::interactive_lines_editor::InteractiveLinesEditor;
 use super::lines_classifier;
+use crate::model::Money;
 use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
     LongTermLiabilities, NonCurrentAssets,
@@ -8,7 +9,6 @@ use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
 use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
-use crate::model::{Money, MoneyMultiplier};
 use color_print::cprintln;
 use eyre::{Result, eyre};
 use std::collections::HashMap;
@@ -94,13 +94,15 @@ fn parse_common_helper<Keys: GenericKeys>(
     Ok(())
 }
 
-pub struct ReportParser {
-    balance_keys_classifier: Rc<dyn lines_classifier::KeyClassifier<BalanceKeys>>,
-    income_keys_classifier: Rc<dyn lines_classifier::KeyClassifier<IncomeKeys>>,
-}
+pub struct ReportParser {}
 
 impl ReportParser {
     pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn make_default_balance_keys_classifier()
+    -> Rc<dyn lines_classifier::KeyClassifier<BalanceKeys>> {
         let mut line_to_balance_key = HashMap::new();
         // TODO: Move to permanent storage.
         line_to_balance_key.insert("основные средства".to_owned(), BalanceKeys::FixedAssets);
@@ -186,6 +188,11 @@ impl ReportParser {
             "итого краткосрочные обязательства".to_owned(),
             BalanceKeys::TotalCurrentLiabilities,
         );
+        Rc::new(lines_classifier::MapKeyClasifier::new(line_to_balance_key))
+    }
+
+    pub fn make_default_income_keys_classifier()
+    -> Rc<dyn lines_classifier::KeyClassifier<IncomeKeys>> {
         let mut line_to_income_key = HashMap::new();
         line_to_income_key.insert("выручка от реализации".to_owned(), IncomeKeys::SalesRevenue);
         line_to_income_key.insert(
@@ -231,14 +238,7 @@ impl ReportParser {
             "итого совокупный доход/(убыток) за отчётный период".to_owned(),
             IncomeKeys::NetProfit,
         );
-        Self {
-            balance_keys_classifier: Rc::new(lines_classifier::MapKeyClasifier::new(
-                line_to_balance_key,
-            )),
-            income_keys_classifier: Rc::new(lines_classifier::MapKeyClasifier::new(
-                line_to_income_key,
-            )),
-        }
+        Rc::new(lines_classifier::MapKeyClasifier::new(line_to_income_key))
     }
 
     fn parse_non_current_assets(
@@ -416,18 +416,6 @@ impl ReportParser {
         }
     }
 
-    pub fn classify_balance_lines(
-        &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
-    ) -> Result<Vec<ParsedLineInfo<BalanceKeys>>> {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.balance_keys_classifier.clone(),
-        );
-        classifier.classify_lines(page_lines)
-    }
-
     pub fn parse_balance_report_batch(
         &self,
         parsed_lines: &Vec<ParsedLineInfo<BalanceKeys>>,
@@ -513,18 +501,6 @@ impl ReportParser {
                 }
             }
         }
-    }
-
-    pub fn classify_income_lines(
-        &self,
-        page_lines: &[String],
-        money_multiplier: MoneyMultiplier,
-    ) -> Result<Vec<ParsedLineInfo<IncomeKeys>>> {
-        let classifier = lines_classifier::LinesClassifier::new(
-            money_multiplier,
-            self.income_keys_classifier.clone(),
-        );
-        classifier.classify_lines(page_lines)
     }
 
     fn parse_gross_profit(
