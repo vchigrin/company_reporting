@@ -67,7 +67,8 @@ impl Storage {
                    report_id INTEGER NOT NULL,
                    key TEXT NOT NULL,
                    amount_roubles INTEGER NOT NULL,
-                   original_line TEXT
+                   original_line TEXT,
+                   line_index INTEGER NOT NULL
                 );",
                     REPORT_LINES
                 ),
@@ -131,19 +132,21 @@ impl Storage {
         )?;
         let mut insert_stmt = tx
             .prepare(&format!(
-                "INSERT INTO {} (report_id, key, amount_roubles, original_line) VALUES(
+                "INSERT INTO {} (report_id, key, amount_roubles, original_line, line_index) VALUES(
                    $report_id,
                    $key,
                    $amount_roubles,
-                   $original_line
+                   $original_line,
+                   $line_index
                 )",
                 REPORT_LINES
             ))
             .unwrap();
-        for line in lines {
+        for (index, line) in lines.iter().enumerate() {
             let key_str: &'static str = line.key.into();
             insert_stmt.execute(named_params! {
                "$report_id": report_id,
+               "$line_index": index as i64,
                "$key": key_str,
                "$amount_roubles": line.value.in_roubles(),
                "$original_line": line.original_line,
@@ -210,7 +213,8 @@ impl Storage {
         let mut stmt = self
             .connection
             .prepare(&format!(
-                "SELECT key, amount_roubles, original_line FROM {} WHERE report_id = $report_id",
+                "SELECT key, amount_roubles, original_line FROM {} WHERE report_id = $report_id
+                 ORDER BY line_index",
                 REPORT_LINES
             ))
             .unwrap();
