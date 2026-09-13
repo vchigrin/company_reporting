@@ -74,7 +74,21 @@ fn process_add_company(args: &AddCompanyArgs) -> Result<()> {
 fn process_get_company(args: &GetCompanyArgs) -> Result<()> {
     let db = storage::Storage::new_with_file(path::Path::new(DB_FILE_PATH))?;
     let company = db.get_company_by_inn(&args.inn)?;
-    println!("Loaded company {:?}", company);
+    println!("Company: {} INN: {}", company.name, company.inn);
+    let mut periods: Vec<_> = company.raw_reports.keys().collect();
+    periods.sort();
+    println!("Known reports:");
+    for period in periods {
+        let report = &company.raw_reports[period];
+        let has_balance = report.balance.is_some();
+        let has_income = report.income.is_some();
+        println!(
+            "{}; Has balance? {}; Has income report? {}",
+            period.short_string(),
+            has_balance,
+            has_income
+        );
+    }
     Ok(())
 }
 
