@@ -312,4 +312,216 @@ mod tests {
             assert_eq!(company.name, "foo");
         }
     }
+
+    fn sample_company() -> model::CompanyInfo {
+        let mut raw_reports = HashMap::new();
+        for (period, balance, income) in [
+            (
+                model::Period::full(2023),
+                vec![
+                    ParsedLineInfo {
+                        key: BalanceKeys::FixedAssets,
+                        value: model::Money::from_thousands(1500),
+                        original_line: "Основные средства 1500".to_owned(),
+                    },
+                    ParsedLineInfo {
+                        key: BalanceKeys::Cash,
+                        value: model::Money::from_roubles(12345),
+                        original_line: "Денежные средства 12345".to_owned(),
+                    },
+                ],
+                vec![ParsedLineInfo {
+                    key: IncomeKeys::SalesRevenue,
+                    value: model::Money::from_thousands(9000),
+                    original_line: "Выручка от реализации 9000".to_owned(),
+                }],
+            ),
+            (
+                model::Period::first_half(2024),
+                vec![ParsedLineInfo {
+                    key: BalanceKeys::AccountsPayable,
+                    value: model::Money::from_millions(2),
+                    original_line: "Кредиторская задолженность 2".to_owned(),
+                }],
+                vec![ParsedLineInfo {
+                    key: IncomeKeys::NetProfit,
+                    value: model::Money::from_roubles(-500),
+                    original_line: "Чистая прибыль -500".to_owned(),
+                }],
+            ),
+        ] {
+            raw_reports.insert(
+                period,
+                model::RawReport {
+                    balance: Some(balance),
+                    income: Some(income),
+                },
+            );
+        }
+
+        model::CompanyInfo {
+            name: "ООО Пример".to_owned(),
+            inn: "7701234567".to_owned(),
+            raw_reports,
+        }
+    }
+
+    #[test]
+    fn raw_reports_save_restore() {
+        let mut storage = Storage::new_in_memory().expect("Failed create DB");
+        let original = sample_company();
+        storage
+            .save_company(&original)
+            .expect("Failed save company");
+        let restored = storage
+            .get_company_by_inn(&original.inn)
+            .expect("Failed query company");
+
+        assert_eq!(restored.name, original.name);
+        assert_eq!(restored.inn, original.inn);
+        assert_eq!(restored.raw_reports.len(), original.raw_reports.len());
+        for (period, raw_report) in &original.raw_reports {
+            let restored_report = restored
+                .raw_reports
+                .get(period)
+                .expect("Missing restored period");
+            compare_raw_report(restored_report, raw_report);
+        }
+    }
+
+    fn compare_raw_report(restored: &model::RawReport, expected: &model::RawReport) {
+        let (restored_balance, expected_balance) =
+            (restored.balance.as_ref(), expected.balance.as_ref());
+        match (restored_balance, expected_balance) {
+            (Some(rb), Some(eb)) => compare_lines(rb, eb),
+            (None, None) => {}
+            _ => panic!("balance presence mismatch"),
+        }
+
+        let (restored_income, expected_income) =
+            (restored.income.as_ref(), expected.income.as_ref());
+        match (restored_income, expected_income) {
+            (Some(ri), Some(ei)) => compare_lines(ri, ei),
+            (None, None) => {}
+            _ => panic!("income presence mismatch"),
+        }
+    }
+
+    fn compare_lines<Keys: crate::report_parser::GenericKeys>(
+        restored: &[crate::report_parser::ParsedLineInfo<Keys>],
+        expected: &[crate::report_parser::ParsedLineInfo<Keys>],
+    ) {
+        assert_eq!(restored.len(), expected.len());
+        for (r, e) in restored.iter().zip(expected.iter()) {
+            assert_eq!(r.key, e.key);
+            assert_eq!(r.value, e.value);
+            assert_eq!(r.original_line, e.original_line);
+        }
+    }
+
+    #[test]
+    fn overwrite_reports() {
+        fn balance_line(key: BalanceKeys, roubles: i64, line: &str) -> ParsedLineInfo<BalanceKeys> {
+            ParsedLineInfo {
+                key,
+                value: model::Money::from_roubles(roubles),
+                original_line: line.to_owned(),
+            }
+        }
+        fn balance_only_report(lines: Vec<ParsedLineInfo<BalanceKeys>>) -> model::RawReport {
+            model::RawReport {
+                balance: Some(lines),
+                income: None,
+            }
+        }
+
+        let mut company = model::CompanyInfo {
+            name: "ООО Пример".to_owned(),
+            inn: "7707654321".to_owned(),
+            raw_reports: HashMap::new(),
+        };
+        macro_rules! insert_report {
+            ($period:expr, $lines:expr) => {
+                company
+                    .raw_reports
+                    .insert($period, balance_only_report($lines));
+            };
+        }
+
+        let period_add = model::Period::full(2023);
+        let period_remove = model::Period::full(2024);
+        let period_change = model::Period::full(2025);
+
+        // Initial state: 2 lines each.
+        insert_report!(
+            period_add,
+            vec![
+                balance_line(BalanceKeys::FixedAssets, 1000, "Основные средства 1000"),
+                balance_line(BalanceKeys::Cash, 200, "Денежные средства 200"),
+            ]
+        );
+        insert_report!(
+            period_remove,
+            vec![
+                balance_line(BalanceKeys::FixedAssets, 1000, "Основные средства 1000"),
+                balance_line(BalanceKeys::Cash, 200, "Денежные средства 200"),
+                balance_line(BalanceKeys::AccountsReceivable, 300, "Дебиторка 300"),
+            ]
+        );
+        insert_report!(
+            period_change,
+            vec![
+                balance_line(BalanceKeys::FixedAssets, 1000, "Основные средства 1000"),
+                balance_line(BalanceKeys::Cash, 200, "Денежные средства 200"),
+            ]
+        );
+
+        let mut storage = Storage::new_in_memory().expect("Failed create DB");
+        storage.save_company(&company).expect("Failed save company");
+
+        // Modify in memory: add a line to one report, remove from another,
+        // change a line in the third.
+        let modified = company.raw_reports.get_mut(&period_add).unwrap();
+        modified.balance.as_mut().unwrap().push(balance_line(
+            BalanceKeys::AccountsReceivable,
+            300,
+            "Дебиторка 300",
+        ));
+
+        company
+            .raw_reports
+            .get_mut(&period_remove)
+            .unwrap()
+            .balance
+            .as_mut()
+            .unwrap()
+            .remove(2);
+
+        {
+            let lines = company
+                .raw_reports
+                .get_mut(&period_change)
+                .unwrap()
+                .balance
+                .as_mut()
+                .unwrap();
+            lines[1] = balance_line(BalanceKeys::Cash, 999, "Денежные средства 999");
+        }
+
+        storage
+            .save_company(&company)
+            .expect("Failed overwrite company");
+
+        let restored = storage
+            .get_company_by_inn(&company.inn)
+            .expect("Failed query company");
+        assert_eq!(restored.raw_reports.len(), company.raw_reports.len());
+        for (period, expected_report) in &company.raw_reports {
+            let restored_report = restored
+                .raw_reports
+                .get(period)
+                .expect("Missing restored period");
+            compare_raw_report(restored_report, expected_report);
+        }
+    }
 }
