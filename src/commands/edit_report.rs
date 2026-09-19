@@ -39,16 +39,24 @@ pub fn process_edit_report(args: &EditReportArgs, db: &mut storage::Storage) -> 
                 .balance
                 .take()
                 .ok_or_else(|| eyre!("No balance report for this period to edit"))?;
-            let edited = parser.parse_balance_report_interactive(existing)?;
-            company_report.balance = Some(edited);
+            if let Some(edited) = parser.parse_balance_report_interactive(existing)? {
+                company_report.balance = Some(edited);
+            } else {
+                // Used cancelled editing.
+                return Ok(());
+            }
         }
         ReportType::Income => {
             let existing = company_report
                 .income
                 .take()
                 .ok_or_else(|| eyre!("No income report for this period to edit"))?;
-            let edited = parser.parse_income_report_interactive(existing)?;
-            company_report.income = Some(edited);
+            if let Some(edited) = parser.parse_income_report_interactive(existing)? {
+                company_report.income = Some(edited);
+            } else {
+                // Used cancelled editing.
+                return Ok(());
+            }
         }
     }
     db.save_company(&company)?;

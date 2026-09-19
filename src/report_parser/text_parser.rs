@@ -1,4 +1,3 @@
-use super::interactive_lines_editor::InteractiveLinesEditor;
 use super::lines_classifier;
 use crate::model::Money;
 use crate::model::balance_report::{
@@ -9,7 +8,7 @@ use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
 use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
-use color_print::cprintln;
+use crate::ui::interactive_lines_editor::{EditResult, InteractiveLinesEditor};
 use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -401,16 +400,19 @@ impl ReportParser {
     pub fn parse_balance_report_interactive(
         &self,
         parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
-    ) -> Result<Vec<ParsedLineInfo<BalanceKeys>>> {
+    ) -> Result<Option<Vec<ParsedLineInfo<BalanceKeys>>>> {
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
-            editor.run_editor()?;
+            let edit_result = editor.run_editor()?;
+            if edit_result == EditResult::CloseWithoutSaving {
+                return Ok(None);
+            }
             match self.parse_balance_report_batch(editor.result_lines()) {
                 Ok(_) => {
-                    return Ok(editor.result_lines().clone());
+                    return Ok(Some(editor.result_lines().clone()));
                 }
                 Err(err) => {
-                    cprintln!("Failed parse report; Error <red>{}</red>", err);
+                    editor.set_error_line(err.to_string());
                 }
             }
         }
@@ -488,16 +490,19 @@ impl ReportParser {
     pub fn parse_income_report_interactive(
         &self,
         parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
-    ) -> Result<Vec<ParsedLineInfo<IncomeKeys>>> {
+    ) -> Result<Option<Vec<ParsedLineInfo<IncomeKeys>>>> {
         let mut editor = InteractiveLinesEditor::new(parsed_lines);
         loop {
-            editor.run_editor()?;
+            let edit_result = editor.run_editor()?;
+            if edit_result == EditResult::CloseWithoutSaving {
+                return Ok(None);
+            }
             match self.parse_income_report_batch(editor.result_lines()) {
                 Ok(_) => {
-                    return Ok(editor.result_lines().clone());
+                    return Ok(Some(editor.result_lines().clone()));
                 }
                 Err(err) => {
-                    cprintln!("Failed parse report; Error <red>{}</red>", err);
+                    editor.set_error_line(err.to_string());
                 }
             }
         }

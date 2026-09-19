@@ -7,6 +7,7 @@ mod commands;
 mod model;
 mod report_parser;
 mod storage;
+mod ui;
 
 // TODO(vchigrin): Add config or command line param or path in HOME directory...
 const DB_FILE_PATH: &str = "companies.db";

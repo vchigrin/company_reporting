@@ -77,7 +77,13 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
         model::ReportType::Balance => {
             let parsed_lines = classify_balance_lines(&page_lines, args.money_multiplier)?;
             let final_lines = if args.interactive {
-                parser.parse_balance_report_interactive(parsed_lines)?
+                match parser.parse_balance_report_interactive(parsed_lines)? {
+                    Some(r) => r,
+                    None => {
+                        // User cancelled
+                        return Ok(());
+                    }
+                }
             } else {
                 // Verify that lines are correct and Income can be constructed
                 // from this lines set.
@@ -89,7 +95,13 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
         model::ReportType::Income => {
             let parsed_lines = classify_income_lines(&page_lines, args.money_multiplier)?;
             let final_lines = if args.interactive {
-                parser.parse_income_report_interactive(parsed_lines)?
+                match parser.parse_income_report_interactive(parsed_lines)? {
+                    Some(r) => r,
+                    None => {
+                        // User cancelled
+                        return Ok(());
+                    }
+                }
             } else {
                 // Verify that lines are correct and Income can be constructed
                 // from this lines set.

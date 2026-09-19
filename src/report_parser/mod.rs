@@ -1,4 +1,3 @@
-mod interactive_lines_editor;
 pub mod lines_classifier;
 mod ocr;
 mod text_parser;
