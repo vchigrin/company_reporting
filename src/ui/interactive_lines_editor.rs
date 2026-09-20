@@ -164,6 +164,26 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
                 }
                 Ok(None)
             }
+            KeyCode::Char('w') => {
+                if let Some(i) = self.selected()
+                    && i > 0
+                {
+                    self.parsed_lines.swap(i - 1, i);
+                    self.selected_index = i - 1;
+                    self.status = Some("Line moved up".to_owned());
+                }
+                Ok(None)
+            }
+            KeyCode::Char('s') => {
+                if let Some(i) = self.selected()
+                    && i < (self.parsed_lines.len() - 1)
+                {
+                    self.parsed_lines.swap(i + 1, i);
+                    self.selected_index = i + 1;
+                    self.status = Some("Line moved down".to_owned());
+                }
+                Ok(None)
+            }
             _ => Ok(None),
         }
     }
@@ -221,7 +241,7 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
 
     fn draw_status(&self, f: &mut Frame<'_>) {
         let status = self.status.clone().unwrap_or_else(|| {
-            "i: insert  e: edit  d: delete  q/Esc: close without saving Enter: save and exit"
+            "i: insert  e: edit  d: delete  q/Esc: close without saving Enter: save and exit w/s - move line up/down"
                 .to_owned()
         });
         f.render_widget(
