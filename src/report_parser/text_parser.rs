@@ -470,13 +470,13 @@ impl ReportParser {
             IncomeKeys::OperationalProfit,
             &Self::parse_operational_segment,
         )?;
-        log::info!("Parsed operationsl segment OK: {:?}", operational_segment);
+        log::info!("Parsed operational segment OK: {:?}", operational_segment);
 
         let financial_segment =
             helper.parse_next(IncomeKeys::ProfitBeforeTax, &Self::parse_financial_segment)?;
         log::info!("Parsed financial segment OK: {:?}", financial_segment);
 
-        let profit_tax = helper.parse_next(IncomeKeys::ProfitTax, &Self::parse_profit_tax)?;
+        let profit_tax = helper.parse_next(IncomeKeys::NetProfit, &Self::parse_profit_tax)?;
         log::info!("Parsed profit tax OK: {:?}", profit_tax);
 
         Ok(IncomeReport::new(
@@ -537,6 +537,7 @@ impl ReportParser {
         let mut management_expenses = ParsedLineInfoCollector::new(IncomeKeys::ManagementExpenses);
         let mut other_income = ParsedLineInfoCollector::new(IncomeKeys::OtherIncome);
         let mut other_expenses = ParsedLineInfoCollector::new(IncomeKeys::OtherExpenses);
+        let mut operational_profit = ParsedLineInfoCollector::new(IncomeKeys::OperationalProfit);
         parse_common_helper(
             report_lines,
             &mut [
@@ -544,6 +545,7 @@ impl ReportParser {
                 &mut management_expenses,
                 &mut other_income,
                 &mut other_expenses,
+                &mut operational_profit,
             ],
         )?;
 
@@ -553,7 +555,8 @@ impl ReportParser {
             other_income.result(),
             other_expenses.result(),
         );
-        // TODO(vchigrin): We need GrossProfit to validate operational segment...
+        // TODO(vchigrin): We need GrossProfit to validate operational segment,
+        // for now just drop "operational_profit" value.
         Ok(result)
     }
 
@@ -562,18 +565,27 @@ impl ReportParser {
     ) -> Result<FinancialSegment> {
         let mut financial_income = ParsedLineInfoCollector::new(IncomeKeys::FinancialIncome);
         let mut financial_expenses = ParsedLineInfoCollector::new(IncomeKeys::FinancialExpenses);
+        let mut profit_before_tax = ParsedLineInfoCollector::new(IncomeKeys::ProfitBeforeTax);
         parse_common_helper(
             report_lines,
-            &mut [&mut financial_income, &mut financial_expenses],
+            &mut [
+                &mut financial_income,
+                &mut financial_expenses,
+                &mut profit_before_tax,
+            ],
         )?;
         let result = FinancialSegment::new(financial_income.result(), financial_expenses.result());
-        // TODO(vchigrin): We need GrossProfit to validate operational segment...
+        // TODO(vchigrin): We need OperationalProfit to validate financial segment...
+        // For now just drop ProfitBeforeTax line.
         Ok(result)
     }
 
     fn parse_profit_tax(report_lines: &[ParsedLineInfo<IncomeKeys>]) -> Result<Money> {
         let mut profit_tax = ParsedLineInfoCollector::new(IncomeKeys::ProfitTax);
-        parse_common_helper(report_lines, &mut [&mut profit_tax])?;
+        let mut net_profit = ParsedLineInfoCollector::new(IncomeKeys::NetProfit);
+        parse_common_helper(report_lines, &mut [&mut profit_tax, &mut net_profit])?;
+        // TODO(vchigrin): We need ProfitBeforeTax to validate this segment...
+        // For now just drop net_profit line.
         Ok(profit_tax.result())
     }
 }
