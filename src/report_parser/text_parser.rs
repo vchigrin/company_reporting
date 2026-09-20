@@ -466,17 +466,24 @@ impl ReportParser {
             helper.parse_next(IncomeKeys::GrossProfit, &Self::parse_gross_profit)?;
         log::info!("Parsed gross income OK: {:?}", gross_profit_segment);
 
-        let operational_segment = helper.parse_next(
-            IncomeKeys::OperationalProfit,
-            &Self::parse_operational_segment,
-        )?;
+        let gross_profit = gross_profit_segment.gross_profit();
+        let operational_segment = helper
+            .parse_next(IncomeKeys::OperationalProfit, &|report_lines| {
+                Self::parse_operational_segment(gross_profit, report_lines)
+            })?;
         log::info!("Parsed operational segment OK: {:?}", operational_segment);
 
-        let financial_segment =
-            helper.parse_next(IncomeKeys::ProfitBeforeTax, &Self::parse_financial_segment)?;
+        let operational_profit = operational_segment.operational_profit(gross_profit);
+        let financial_segment = helper
+            .parse_next(IncomeKeys::ProfitBeforeTax, &|report_lines| {
+                Self::parse_financial_segment(operational_profit, report_lines)
+            })?;
         log::info!("Parsed financial segment OK: {:?}", financial_segment);
 
-        let profit_tax = helper.parse_next(IncomeKeys::NetProfit, &Self::parse_profit_tax)?;
+        let profit_before_tax = financial_segment.profit_before_tax(operational_profit);
+        let profit_tax = helper.parse_next(IncomeKeys::NetProfit, &|report_lines| {
+            Self::parse_profit_tax(profit_before_tax, report_lines)
+        })?;
         log::info!("Parsed profit tax OK: {:?}", profit_tax);
 
         Ok(IncomeReport::new(
@@ -531,6 +538,7 @@ impl ReportParser {
     }
 
     fn parse_operational_segment(
+        gross_profit: Money,
         report_lines: &[ParsedLineInfo<IncomeKeys>],
     ) -> Result<OperationalSegment> {
         let mut commercial_expenses = ParsedLineInfoCollector::new(IncomeKeys::CommercialExpenses);
@@ -554,13 +562,20 @@ impl ReportParser {
             management_expenses.result(),
             other_income.result(),
             other_expenses.result(),
-        );
-        // TODO(vchigrin): We need GrossProfit to validate operational segment,
-        // for now just drop "operational_profit" value.
+        )?;
+        let calculated_profit = result.operational_profit(gross_profit);
+        if calculated_profit != operational_profit.result() {
+            return Err(eyre!(
+                "Income mismatch in operational profit. Calculated {} provided in report {}",
+                calculated_profit.to_string(),
+                operational_profit.result().to_string()
+            ));
+        }
         Ok(result)
     }
 
     fn parse_financial_segment(
+        operational_profit: Money,
         report_lines: &[ParsedLineInfo<IncomeKeys>],
     ) -> Result<FinancialSegment> {
         let mut financial_income = ParsedLineInfoCollector::new(IncomeKeys::FinancialIncome);
@@ -574,18 +589,35 @@ impl ReportParser {
                 &mut profit_before_tax,
             ],
         )?;
-        let result = FinancialSegment::new(financial_income.result(), financial_expenses.result());
-        // TODO(vchigrin): We need OperationalProfit to validate financial segment...
-        // For now just drop ProfitBeforeTax line.
+        let result = FinancialSegment::new(financial_income.result(), financial_expenses.result())?;
+        let calculated_profit = result.profit_before_tax(operational_profit);
+        if calculated_profit != profit_before_tax.result() {
+            return Err(eyre!(
+                "Income mismatch in profit before tax. Calculated {} provided in report {}",
+                calculated_profit.to_string(),
+                profit_before_tax.result().to_string()
+            ));
+        }
         Ok(result)
     }
 
-    fn parse_profit_tax(report_lines: &[ParsedLineInfo<IncomeKeys>]) -> Result<Money> {
+    fn parse_profit_tax(
+        profit_before_tax: Money,
+        report_lines: &[ParsedLineInfo<IncomeKeys>],
+    ) -> Result<Money> {
         let mut profit_tax = ParsedLineInfoCollector::new(IncomeKeys::ProfitTax);
         let mut net_profit = ParsedLineInfoCollector::new(IncomeKeys::NetProfit);
         parse_common_helper(report_lines, &mut [&mut profit_tax, &mut net_profit])?;
-        // TODO(vchigrin): We need ProfitBeforeTax to validate this segment...
-        // For now just drop net_profit line.
+        // NOTE: seems, profit_tax can be positive in case when company get
+        // financial losses before tax.
+        let calculated_profit = profit_before_tax + profit_tax.result();
+        if calculated_profit != net_profit.result() {
+            return Err(eyre!(
+                "Net profit mismatch. Calculated {} provided in report {}",
+                calculated_profit.to_string(),
+                net_profit.result().to_string()
+            ));
+        }
         Ok(profit_tax.result())
     }
 }

@@ -30,13 +30,33 @@ impl OperationalSegment {
         management_expenses: Money,
         other_income: Money,
         other_expenses: Money,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        if commercial_expenses > Money::zero() {
+            return Err(eyre!("commercial_expenses must be non-positive"));
+        }
+        if management_expenses > Money::zero() {
+            return Err(eyre!("management_expenses must be non-positive"));
+        }
+        if other_expenses > Money::zero() {
+            return Err(eyre!("other_expenses must be non-positive"));
+        }
+        if other_income < Money::zero() {
+            return Err(eyre!("other_income must be non-negative"));
+        }
+        Ok(Self {
             commercial_expenses,
             management_expenses,
             other_income,
             other_expenses,
-        }
+        })
+    }
+
+    pub fn operational_profit(&self, gross_profit: Money) -> Money {
+        gross_profit
+            + self.commercial_expenses
+            + self.management_expenses
+            + self.other_income
+            + self.other_expenses
     }
 }
 
@@ -49,11 +69,21 @@ pub struct FinancialSegment {
 }
 
 impl FinancialSegment {
-    pub fn new(financial_income: Money, financial_expenses: Money) -> Self {
-        Self {
+    pub fn new(financial_income: Money, financial_expenses: Money) -> Result<Self> {
+        if financial_expenses > Money::zero() {
+            return Err(eyre!("financial_expenses must be non-positive"));
+        }
+        if financial_income < Money::zero() {
+            return Err(eyre!("financial_income must be non-negative"));
+        }
+        Ok(Self {
             financial_income,
             financial_expenses,
-        }
+        })
+    }
+
+    pub fn profit_before_tax(&self, operational_income: Money) -> Money {
+        operational_income + self.financial_income + self.financial_expenses
     }
 }
 
@@ -68,6 +98,9 @@ pub struct IncomeReport {
 
 impl GrossProfitSegment {
     pub fn new(sales_revenue: Money, cost_of_sales: Money) -> Result<Self> {
+        if sales_revenue < Money::zero() {
+            return Err(eyre!("Sales revenue must be non-negative"));
+        }
         if cost_of_sales > Money::zero() {
             return Err(eyre!("Cost of sales should be negative"));
         }
