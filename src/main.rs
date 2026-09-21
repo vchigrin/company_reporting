@@ -1,4 +1,4 @@
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use eyre::{Result, eyre};
 use std::collections::HashMap;
 use std::path;
@@ -8,6 +8,8 @@ mod model;
 mod report_parser;
 mod storage;
 mod ui;
+
+use commands::GetCompanyArgs;
 
 // TODO(vchigrin): Add config or command line param or path in HOME directory...
 const DB_FILE_PATH: &str = "companies.db";
@@ -20,15 +22,6 @@ struct AddCompanyArgs {
     inn: String,
 }
 
-#[derive(Debug, Args)]
-#[command(group(ArgGroup::new("company").required(true).multiple(false).args(["inn", "name"])))]
-struct GetCompanyArgs {
-    #[arg(long)]
-    inn: Option<String>,
-    #[arg(long)]
-    name: Option<String>,
-}
-
 #[derive(Debug, Subcommand)]
 enum Command {
     AddCompany(AddCompanyArgs),
@@ -37,6 +30,7 @@ enum Command {
     UpdateDictFromReports(commands::UpdateReportsDictArgs),
     EditReport(commands::EditReportArgs),
     ParseReport(commands::ParseReportArgs),
+    DetailedCompanyReport(commands::GetCompanyArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -110,6 +104,9 @@ fn process_command(command: &Command) -> Result<()> {
         }
         Command::EditReport(args) => commands::process_edit_report(args, &mut db),
         Command::ParseReport(args) => commands::process_parse_report(args, &mut db),
+        Command::DetailedCompanyReport(args) => {
+            commands::process_detailed_company_report(&mut db, args)
+        }
     }
 }
 
