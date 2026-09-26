@@ -12,12 +12,14 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
 use std::collections::HashMap;
+use std::fmt;
 use strum_macros::EnumString;
 
 #[derive(Debug, Clone, Copy, PartialEq, EnumString)]
 pub enum DisplayedReportType {
     Balance,
     Income,
+    Metrics,
 }
 
 #[derive(Debug, Args)]
@@ -195,11 +197,105 @@ fn net_profit(report: &Report) -> Money {
     report.income.net_profit()
 }
 
+fn net_debt(report: &Report) -> Money {
+    let current_assets = report.balance.assets().current();
+    // TODO(vchigrin): May be we should move financial assets to
+    // kind of options here, may be using them not always a good idea?
+    let liquidity = current_assets.cash() + current_assets.financial_assets();
+
+    let liabilities = report.balance.liabilities();
+    let percent_debt = liabilities.current().loans() + liabilities.long_term().loans();
+    percent_debt - liquidity
+}
+
+fn ebit_ltm(reports_ltm: &[Report]) -> Metric {
+    let mut result = Money::zero();
+    for r in reports_ltm {
+        result += r.income.operational_profit();
+    }
+    Metric::Money(result)
+}
+
+fn net_debt_ebit_ltm(reports_ltm: &[Report]) -> Metric {
+    // reports_ltm must not be empty.
+    let net_debt = net_debt(reports_ltm.last().unwrap());
+    let Metric::Money(ebit_ltm) = ebit_ltm(reports_ltm) else {
+        panic!("Unexpected ebit_ltm metric type");
+    };
+    let result = (net_debt.in_roubles() as f64) / (ebit_ltm.in_roubles() as f64);
+    Metric::Ratio(result)
+}
+
+fn icr(reports_ltm: &[Report]) -> Metric {
+    // reports_ltm must not be empty.
+    let last_income = &reports_ltm.last().unwrap().income;
+    let operational_profit = last_income.operational_profit();
+    let net_financial_expenses = last_income
+        .financial_segment()
+        .net_financial_expenses()
+        .abs();
+    let result =
+        (operational_profit.in_roubles() as f64) / (net_financial_expenses.in_roubles() as f64);
+    Metric::Ratio(result)
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+enum Metric {
+    Money(Money),
+    Ratio(f64),
+}
+
+impl Metric {
+    fn percent_increase(prev: Metric, cur: Metric) -> f64 {
+        match prev {
+            Metric::Money(prev_money) => {
+                let Metric::Money(cur_money) = cur else {
+                    panic!("Heteroheneus percent attempt");
+                };
+                if prev_money != Money::zero() {
+                    ((cur_money - prev_money).in_roubles() as f64 * 100.)
+                        / (prev_money.in_roubles() as f64)
+                } else {
+                    f64::INFINITY
+                }
+            }
+            Metric::Ratio(prev_ratio) => {
+                let Metric::Ratio(cur_ratio) = cur else {
+                    panic!("Heteroheneus percent attempt");
+                };
+                if prev_ratio != 0. {
+                    ((cur_ratio - prev_ratio) * 100.) / (prev_ratio)
+                } else {
+                    f64::INFINITY
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Display for Metric {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Metric::Money(m) => m.fmt(f),
+            Metric::Ratio(r) => r.fmt(f),
+        }
+    }
+}
+
 type MoneyGetter = fn(&Report) -> Money;
+// Last twelve month reports, sorted (most recent period last).
+// Guaranted not empty.
+type ReportsLTM = [Report];
+type MetricGetter = fn(&ReportsLTM) -> Metric;
+
+enum ValueGetter {
+    Money(MoneyGetter),
+    Metric(MetricGetter),
+}
 
 struct RowDescriptor {
     title: &'static str,
-    money_getter: Option<MoneyGetter>,
+    value_getter: ValueGetter,
     level: i32,
 }
 
@@ -209,132 +305,132 @@ const MAX_LEVEL: i32 = 2;
 const BALANCE_ROWS: [RowDescriptor; 26] = [
     RowDescriptor {
         title: "Assets",
-        money_getter: Some(total_assets),
+        value_getter: ValueGetter::Money(total_assets),
         level: 0,
     },
     RowDescriptor {
         title: "Non-current assets",
-        money_getter: Some(total_non_current_assets),
+        value_getter: ValueGetter::Money(total_non_current_assets),
         level: 1,
     },
     RowDescriptor {
         title: "Non-material assets",
-        money_getter: Some(non_material_assets),
+        value_getter: ValueGetter::Money(non_material_assets),
         level: 2,
     },
     RowDescriptor {
         title: "Fixed assets",
-        money_getter: Some(fixed_assets),
+        value_getter: ValueGetter::Money(fixed_assets),
         level: 2,
     },
     RowDescriptor {
         title: "Financial investments (non-current)",
-        money_getter: Some(non_current_financial_assets),
+        value_getter: ValueGetter::Money(non_current_financial_assets),
         level: 2,
     },
     RowDescriptor {
         title: "Other non-current assets",
-        money_getter: Some(non_current_other),
+        value_getter: ValueGetter::Money(non_current_other),
         level: 2,
     },
     RowDescriptor {
         title: "Current assets",
-        money_getter: Some(total_current_assets),
+        value_getter: ValueGetter::Money(total_current_assets),
         level: 1,
     },
     RowDescriptor {
         title: "Inventory",
-        money_getter: Some(physical_inventory),
+        value_getter: ValueGetter::Money(physical_inventory),
         level: 2,
     },
     RowDescriptor {
         title: "Accounts receivable",
-        money_getter: Some(accounts_receivable),
+        value_getter: ValueGetter::Money(accounts_receivable),
         level: 2,
     },
     RowDescriptor {
         title: "Financial investments (current)",
-        money_getter: Some(current_financial_assets),
+        value_getter: ValueGetter::Money(current_financial_assets),
         level: 2,
     },
     RowDescriptor {
         title: "Cash and equivalents",
-        money_getter: Some(cash),
+        value_getter: ValueGetter::Money(cash),
         level: 2,
     },
     RowDescriptor {
         title: "Other current assets",
-        money_getter: Some(current_other),
+        value_getter: ValueGetter::Money(current_other),
         level: 2,
     },
     RowDescriptor {
         title: "Equity",
-        money_getter: Some(total_equity),
+        value_getter: ValueGetter::Money(total_equity),
         level: 0,
     },
     RowDescriptor {
         title: "Authorised capital",
-        money_getter: Some(authorised_capital),
+        value_getter: ValueGetter::Money(authorised_capital),
         level: 2,
     },
     RowDescriptor {
         title: "Capital surplus",
-        money_getter: Some(capital_surplus),
+        value_getter: ValueGetter::Money(capital_surplus),
         level: 2,
     },
     RowDescriptor {
         title: "Retained earnings",
-        money_getter: Some(retained_earnings),
+        value_getter: ValueGetter::Money(retained_earnings),
         level: 2,
     },
     RowDescriptor {
         title: "Other equity",
-        money_getter: Some(equity_other),
+        value_getter: ValueGetter::Money(equity_other),
         level: 2,
     },
     RowDescriptor {
         title: "Liabilities",
-        money_getter: Some(total_liabilities),
+        value_getter: ValueGetter::Money(total_liabilities),
         level: 0,
     },
     RowDescriptor {
         title: "Long-term liabilities",
-        money_getter: Some(total_long_term_liabilities),
+        value_getter: ValueGetter::Money(total_long_term_liabilities),
         level: 1,
     },
     RowDescriptor {
         title: "Long-term loans",
-        money_getter: Some(long_term_loans),
+        value_getter: ValueGetter::Money(long_term_loans),
         level: 2,
     },
     RowDescriptor {
         title: "Long-term accounts payable",
-        money_getter: Some(long_term_accounts_payable),
+        value_getter: ValueGetter::Money(long_term_accounts_payable),
         level: 2,
     },
     RowDescriptor {
         title: "Other long-term liabilities",
-        money_getter: Some(long_term_other),
+        value_getter: ValueGetter::Money(long_term_other),
         level: 2,
     },
     RowDescriptor {
         title: "Short-term liabilities",
-        money_getter: Some(total_current_liabilities),
+        value_getter: ValueGetter::Money(total_current_liabilities),
         level: 1,
     },
     RowDescriptor {
         title: "Short-term loans",
-        money_getter: Some(current_loans),
+        value_getter: ValueGetter::Money(current_loans),
         level: 2,
     },
     RowDescriptor {
         title: "Short-term accounts payable",
-        money_getter: Some(current_accounts_payable),
+        value_getter: ValueGetter::Money(current_accounts_payable),
         level: 2,
     },
     RowDescriptor {
         title: "Other current liabilities",
-        money_getter: Some(current_liabilities_other),
+        value_getter: ValueGetter::Money(current_liabilities_other),
         level: 2,
     },
 ];
@@ -342,77 +438,100 @@ const BALANCE_ROWS: [RowDescriptor; 26] = [
 const INCOME_ROWS: [RowDescriptor; 15] = [
     RowDescriptor {
         title: "Gross profit",
-        money_getter: Some(gross_profit),
+        value_getter: ValueGetter::Money(gross_profit),
         level: 0,
     },
     RowDescriptor {
         title: "Sales revenue",
-        money_getter: Some(sales_revenue),
+        value_getter: ValueGetter::Money(sales_revenue),
         level: 2,
     },
     RowDescriptor {
         title: "Cost of sales",
-        money_getter: Some(cost_of_sales),
+        value_getter: ValueGetter::Money(cost_of_sales),
         level: 2,
     },
     RowDescriptor {
         title: "Operational expenses",
-        money_getter: Some(operational_expenses),
+        value_getter: ValueGetter::Money(operational_expenses),
         level: 0,
     },
     RowDescriptor {
         title: "Comercial expenses",
-        money_getter: Some(commercial_expenses),
+        value_getter: ValueGetter::Money(commercial_expenses),
         level: 2,
     },
     RowDescriptor {
         title: "Management expenses",
-        money_getter: Some(management_expenses),
+        value_getter: ValueGetter::Money(management_expenses),
         level: 2,
     },
     RowDescriptor {
         title: "Other income",
-        money_getter: Some(other_income),
+        value_getter: ValueGetter::Money(other_income),
         level: 2,
     },
     RowDescriptor {
         title: "Other expenses",
-        money_getter: Some(other_expenses),
+        value_getter: ValueGetter::Money(other_expenses),
         level: 2,
     },
     RowDescriptor {
         title: "Operational profit",
-        money_getter: Some(operational_profit),
+        value_getter: ValueGetter::Money(operational_profit),
         level: 0,
     },
     RowDescriptor {
         title: "Financial net expenses",
-        money_getter: Some(net_financial_expenses),
+        value_getter: ValueGetter::Money(net_financial_expenses),
         level: 0,
     },
     RowDescriptor {
         title: "Financial income",
-        money_getter: Some(financial_income),
+        value_getter: ValueGetter::Money(financial_income),
         level: 2,
     },
     RowDescriptor {
         title: "Financial expenses",
-        money_getter: Some(financial_expenses),
+        value_getter: ValueGetter::Money(financial_expenses),
         level: 2,
     },
     RowDescriptor {
         title: "Profit before tax",
-        money_getter: Some(profit_before_tax),
+        value_getter: ValueGetter::Money(profit_before_tax),
         level: 0,
     },
     RowDescriptor {
         title: "Profit tax",
-        money_getter: Some(profit_tax),
+        value_getter: ValueGetter::Money(profit_tax),
         level: 0,
     },
     RowDescriptor {
         title: "Net profit",
-        money_getter: Some(net_profit),
+        value_getter: ValueGetter::Money(net_profit),
+        level: 0,
+    },
+];
+
+const RATIOS_ROWS: [RowDescriptor; 4] = [
+    RowDescriptor {
+        title: "Net debt",
+        value_getter: ValueGetter::Money(net_debt),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "EBIT LTM",
+        value_getter: ValueGetter::Metric(ebit_ltm),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Net debt/EBIT LTM",
+        value_getter: ValueGetter::Metric(net_debt_ebit_ltm),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "ICR",
+        value_getter: ValueGetter::Metric(icr),
         level: 0,
     },
 ];
@@ -514,22 +633,17 @@ impl CompanyReportTable {
         false
     }
 
-    fn get_balance_cell_text(
+    fn get_cell_text(
         &self,
-        cur_value: Money,
-        maybe_prev_value: Option<Money>,
+        cur_value: Metric,
+        maybe_prev_value: Option<Metric>,
         balance: &BalanceReport,
     ) -> String {
         match self.value_display_mode {
             ValueDisplayMode::Absolute => cur_value.to_string(),
             ValueDisplayMode::PercentToPrevious => {
                 if let Some(prev_value) = maybe_prev_value {
-                    let percent: f64 = if prev_value != Money::zero() {
-                        ((cur_value - prev_value).in_roubles() as f64 * 100.)
-                            / (prev_value.in_roubles() as f64)
-                    } else {
-                        f64::INFINITY
-                    };
+                    let percent = Metric::percent_increase(prev_value, cur_value);
                     format!("{:+.2}%", percent)
                 } else {
                     // First column will contain abolute values.
@@ -537,7 +651,10 @@ impl CompanyReportTable {
                 }
             }
             ValueDisplayMode::PercentFromBalance => {
-                let percent: f64 = (cur_value.in_roubles() as f64 * 100.)
+                let Metric::Money(cur_money) = cur_value else {
+                    panic!("Unexpected metric in PercentFromBalance mode");
+                };
+                let percent: f64 = (cur_money.in_roubles() as f64 * 100.)
                     / (balance.assets().total().in_roubles() as f64);
                 format!("{:.2}%", percent)
             }
@@ -546,12 +663,12 @@ impl CompanyReportTable {
 
     fn build_cell(
         &self,
-        maybe_cur_value: Option<Money>,
-        maybe_prev_value: Option<Money>,
+        maybe_cur_value: Option<Metric>,
+        maybe_prev_value: Option<Metric>,
         report: &Report,
     ) -> Cell<'static> {
         if let Some(cur_value) = maybe_cur_value {
-            let text = self.get_balance_cell_text(cur_value, maybe_prev_value, &report.balance);
+            let text = self.get_cell_text(cur_value, maybe_prev_value, &report.balance);
             let mut cell = Cell::new(text);
             if let Some(prev_value) = maybe_prev_value {
                 // Important notice: color here show abolute value difference,
@@ -565,7 +682,9 @@ impl CompanyReportTable {
             }
             cell
         } else {
-            Cell::default()
+            // Cell::default not suits here - it returns cell with
+            // zero column span.
+            Cell::new(String::new())
         }
     }
 
@@ -593,12 +712,34 @@ impl CompanyReportTable {
         Cell::new(title).style(style)
     }
 
+    fn build_metric(&self, period: Period, value_getter: &ValueGetter) -> Option<Metric> {
+        match value_getter {
+            ValueGetter::Money(money_getter) => {
+                let maybe_cur_report = &self.reports.get(&period);
+                let maybe_money = maybe_cur_report.map(money_getter);
+                maybe_money.map(Metric::Money)
+            }
+            ValueGetter::Metric(metric_getter) => {
+                let ltm_periods = Period::get_periods_for_ltm(period);
+                let mut ltm_reports = Vec::<Report>::with_capacity(ltm_periods.len());
+                for ltm_period in ltm_periods {
+                    if let Some(report) = &self.reports.get(&ltm_period) {
+                        ltm_reports.push((*report).clone());
+                    } else {
+                        return None;
+                    }
+                }
+                Some(metric_getter(&ltm_reports))
+            }
+        }
+    }
+
     fn build_row(&self, descriptor: &RowDescriptor) -> Row<'static> {
         let mut cells = vec![self.build_title_cell(descriptor)];
-        let mut maybe_prev_value: Option<Money> = None;
+        let mut maybe_prev_value: Option<Metric> = None;
         for period in &self.periods {
+            let maybe_cur_value = self.build_metric(*period, &descriptor.value_getter);
             let maybe_report = &self.reports.get(period).unwrap();
-            let maybe_cur_value = descriptor.money_getter.map(|getter| getter(maybe_report));
             cells.push(self.build_cell(maybe_cur_value, maybe_prev_value, maybe_report));
             maybe_prev_value = maybe_cur_value;
         }
@@ -645,6 +786,7 @@ pub fn process_detailed_company_report(
     let row_descriptors: &'static [RowDescriptor] = match args.displayed_report_type {
         DisplayedReportType::Balance => &BALANCE_ROWS,
         DisplayedReportType::Income => &INCOME_ROWS,
+        DisplayedReportType::Metrics => &RATIOS_ROWS,
     };
     let table = CompanyReportTable::new(company, row_descriptors, args.displayed_report_type)?;
     let mut terminal = ratatui::init();

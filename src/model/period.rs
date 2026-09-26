@@ -125,6 +125,26 @@ impl Period {
             }
         }
     }
+
+    pub fn get_periods_for_ltm(self) -> Vec<Period> {
+        match self.period_type {
+            PeriodType::FirstHalf => {
+                let prev = Period {
+                    year: self.year - 1,
+                    period_type: PeriodType::SecondHalf,
+                };
+                vec![prev, self]
+            }
+            PeriodType::Full => vec![self],
+            PeriodType::SecondHalf => {
+                let prev = Period {
+                    year: self.year,
+                    period_type: PeriodType::FirstHalf,
+                };
+                vec![prev, self]
+            }
+        }
+    }
 }
 
 #[cfg(test)]
