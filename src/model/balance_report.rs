@@ -2,7 +2,7 @@ use super::money::Money;
 use eyre::{Result, eyre};
 
 // Необоротные активы.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct NonCurrentAssets {
     // Основные средства
     fixed_assets: Money,
@@ -15,7 +15,7 @@ pub struct NonCurrentAssets {
 }
 
 // Оборотные активы
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CurrentAssets {
     // Запасы
     physical_inventory: Money,
@@ -29,14 +29,14 @@ pub struct CurrentAssets {
     other: Money,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Assets {
     current: CurrentAssets,
     non_current: NonCurrentAssets,
 }
 
 // Капитал
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Equity {
     // Уставной капитал
     authorised_capital: Money,
@@ -48,7 +48,7 @@ pub struct Equity {
 }
 
 // Долгосрочные обязательства
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LongTermLiabilities {
     // Кредиты и займы
     loans: Money,
@@ -59,7 +59,7 @@ pub struct LongTermLiabilities {
 }
 
 // Краткосрочные обязательства
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CurrentLiabilities {
     // Кредиты и займы
     loans: Money,
@@ -69,13 +69,13 @@ pub struct CurrentLiabilities {
     other: Money,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Liabilities {
     long_term: LongTermLiabilities,
     current: CurrentLiabilities,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct BalanceReport {
     assets: Assets,
     equity: Equity,

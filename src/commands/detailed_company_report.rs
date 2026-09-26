@@ -440,10 +440,10 @@ impl CompanyReportTable {
     fn new(
         company: model::CompanyInfo,
         row_descriptors: &'static [RowDescriptor],
-        reports: HashMap<Period, Report>,
         displayed_report_type: DisplayedReportType,
-    ) -> Self {
-        let mut periods: Vec<Period> = company.raw_reports.keys().copied().collect();
+    ) -> Result<Self> {
+        let reports = company.build_reports()?;
+        let mut periods: Vec<Period> = reports.keys().copied().collect();
         periods.sort();
 
         let column_widths = (0..=periods.len()).map(|_| Constraint::Fill(1));
@@ -475,7 +475,7 @@ impl CompanyReportTable {
             displayed_report_type,
         };
         result.build_rows();
-        result
+        Ok(result)
     }
 
     fn draw(&mut self, f: &mut Frame<'_>) {
@@ -642,17 +642,11 @@ pub fn process_detailed_company_report(
         }
     };
 
-    let reports = company.build_reports()?;
     let row_descriptors: &'static [RowDescriptor] = match args.displayed_report_type {
         DisplayedReportType::Balance => &BALANCE_ROWS,
         DisplayedReportType::Income => &INCOME_ROWS,
     };
-    let table = CompanyReportTable::new(
-        company,
-        row_descriptors,
-        reports,
-        args.displayed_report_type,
-    );
+    let table = CompanyReportTable::new(company, row_descriptors, args.displayed_report_type)?;
     let mut terminal = ratatui::init();
     let result = run_report_viewer(&mut terminal, table);
     ratatui::restore();

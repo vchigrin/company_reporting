@@ -1,10 +1,11 @@
 use super::money::Money;
 use eyre::{Result, eyre};
+use std::ops;
 
 // Money values in Income report is positive for "income" values and
 // negative for "expenses" values.
 //
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct GrossProfitSegment {
     // Выручка от реализации
     sales_revenue: Money,
@@ -12,7 +13,7 @@ pub struct GrossProfitSegment {
     cost_of_sales: Money,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct OperationalSegment {
     // Коммерческие расходы
     commercial_expenses: Money,
@@ -75,7 +76,33 @@ impl OperationalSegment {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl ops::Add for OperationalSegment {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            commercial_expenses: self.commercial_expenses + rhs.commercial_expenses,
+            management_expenses: self.management_expenses + rhs.management_expenses,
+            other_income: self.other_income + rhs.other_income,
+            other_expenses: self.other_expenses + rhs.other_expenses,
+        }
+    }
+}
+
+impl ops::Sub for OperationalSegment {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            commercial_expenses: self.commercial_expenses - rhs.commercial_expenses,
+            management_expenses: self.management_expenses - rhs.management_expenses,
+            other_income: self.other_income - rhs.other_income,
+            other_expenses: self.other_expenses - rhs.other_expenses,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct FinancialSegment {
     // Финансовые доходы
     financial_income: Money,
@@ -110,7 +137,29 @@ impl FinancialSegment {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl ops::Add for FinancialSegment {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            financial_income: self.financial_income + rhs.financial_income,
+            financial_expenses: self.financial_expenses + rhs.financial_expenses,
+        }
+    }
+}
+
+impl ops::Sub for FinancialSegment {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            financial_income: self.financial_income - rhs.financial_income,
+            financial_expenses: self.financial_expenses - rhs.financial_expenses,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct IncomeReport {
     gross_profit_segment: GrossProfitSegment,
     operational_segment: OperationalSegment,
@@ -143,6 +192,28 @@ impl GrossProfitSegment {
     pub fn gross_profit(&self) -> Money {
         // cost_of_sales should be negative
         self.sales_revenue + self.cost_of_sales
+    }
+}
+
+impl ops::Add for GrossProfitSegment {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            sales_revenue: self.sales_revenue + rhs.sales_revenue,
+            cost_of_sales: self.cost_of_sales + rhs.cost_of_sales,
+        }
+    }
+}
+
+impl ops::Sub for GrossProfitSegment {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            sales_revenue: self.sales_revenue - rhs.sales_revenue,
+            cost_of_sales: self.cost_of_sales - rhs.cost_of_sales,
+        }
     }
 }
 
@@ -194,5 +265,31 @@ impl IncomeReport {
     pub fn net_profit(&self) -> Money {
         let profit_before_tax = self.profit_before_tax();
         profit_before_tax + self.profit_tax
+    }
+}
+
+impl ops::Add for IncomeReport {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            gross_profit_segment: self.gross_profit_segment + rhs.gross_profit_segment,
+            operational_segment: self.operational_segment + rhs.operational_segment,
+            financial_segment: self.financial_segment + rhs.financial_segment,
+            profit_tax: self.profit_tax + rhs.profit_tax,
+        }
+    }
+}
+
+impl ops::Sub for IncomeReport {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            gross_profit_segment: self.gross_profit_segment - rhs.gross_profit_segment,
+            operational_segment: self.operational_segment - rhs.operational_segment,
+            financial_segment: self.financial_segment - rhs.financial_segment,
+            profit_tax: self.profit_tax - rhs.profit_tax,
+        }
     }
 }
