@@ -51,12 +51,27 @@ impl OperationalSegment {
         })
     }
 
-    pub fn operational_profit(&self, gross_profit: Money) -> Money {
-        gross_profit
-            + self.commercial_expenses
+    pub fn operational_expenses(&self) -> Money {
+        self.commercial_expenses
             + self.management_expenses
             + self.other_income
             + self.other_expenses
+    }
+
+    pub fn commercial_expenses(&self) -> Money {
+        self.commercial_expenses
+    }
+
+    pub fn management_expenses(&self) -> Money {
+        self.management_expenses
+    }
+
+    pub fn other_income(&self) -> Money {
+        self.other_income
+    }
+
+    pub fn other_expenses(&self) -> Money {
+        self.other_expenses
     }
 }
 
@@ -82,8 +97,16 @@ impl FinancialSegment {
         })
     }
 
-    pub fn profit_before_tax(&self, operational_income: Money) -> Money {
-        operational_income + self.financial_income + self.financial_expenses
+    pub fn net_financial_expenses(&self) -> Money {
+        self.financial_income + self.financial_expenses
+    }
+
+    pub fn financial_income(&self) -> Money {
+        self.financial_income
+    }
+
+    pub fn financial_expenses(&self) -> Money {
+        self.financial_expenses
     }
 }
 
@@ -109,6 +132,14 @@ impl GrossProfitSegment {
             cost_of_sales,
         })
     }
+    pub fn sales_revenue(&self) -> Money {
+        self.sales_revenue
+    }
+
+    pub fn cost_of_sales(&self) -> Money {
+        self.cost_of_sales
+    }
+
     pub fn gross_profit(&self) -> Money {
         // cost_of_sales should be negative
         self.sales_revenue + self.cost_of_sales
@@ -128,5 +159,40 @@ impl IncomeReport {
             financial_segment,
             profit_tax,
         }
+    }
+
+    pub fn gross_profit_segment(&self) -> &GrossProfitSegment {
+        &self.gross_profit_segment
+    }
+
+    pub fn operational_segment(&self) -> &OperationalSegment {
+        &self.operational_segment
+    }
+
+    pub fn financial_segment(&self) -> &FinancialSegment {
+        &self.financial_segment
+    }
+
+    pub fn profit_tax(&self) -> Money {
+        self.profit_tax
+    }
+
+    pub fn gross_profit(&self) -> Money {
+        self.gross_profit_segment.gross_profit()
+    }
+
+    pub fn operational_profit(&self) -> Money {
+        let gross_profit = self.gross_profit();
+        gross_profit + self.operational_segment.operational_expenses()
+    }
+
+    pub fn profit_before_tax(&self) -> Money {
+        let operational_profit = self.operational_profit();
+        operational_profit + self.financial_segment.net_financial_expenses()
+    }
+
+    pub fn net_profit(&self) -> Money {
+        let profit_before_tax = self.profit_before_tax();
+        profit_before_tax + self.profit_tax
     }
 }

@@ -1,6 +1,6 @@
 use crate::model;
 use crate::model::balance_report::BalanceReport;
-use crate::model::{Money, Period};
+use crate::model::{Money, Period, Report};
 use crate::storage;
 use clap::{ArgGroup, Args};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -12,6 +12,13 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
 use std::collections::HashMap;
+use strum_macros::EnumString;
+
+#[derive(Debug, Clone, Copy, PartialEq, EnumString)]
+pub enum DisplayedReportType {
+    Balance,
+    Income,
+}
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("company").required(true).multiple(false).args(["inn", "name"])))]
@@ -20,113 +27,175 @@ pub struct GetCompanyArgs {
     pub inn: Option<String>,
     #[arg(long)]
     pub name: Option<String>,
+    #[arg(long)]
+    pub displayed_report_type: DisplayedReportType,
 }
 
-fn total_assets(balance: &BalanceReport) -> Money {
-    balance.assets().total()
+fn total_assets(report: &Report) -> Money {
+    report.balance.assets().total()
 }
 
-fn total_non_current_assets(balance: &BalanceReport) -> Money {
-    balance.assets().non_current().total()
+fn total_non_current_assets(report: &Report) -> Money {
+    report.balance.assets().non_current().total()
 }
 
-fn total_current_assets(balance: &BalanceReport) -> Money {
-    balance.assets().current().total()
+fn total_current_assets(report: &Report) -> Money {
+    report.balance.assets().current().total()
 }
 
-fn non_material_assets(balance: &BalanceReport) -> Money {
-    balance.assets().non_current().non_material_assets()
+fn non_material_assets(report: &Report) -> Money {
+    report.balance.assets().non_current().non_material_assets()
 }
 
-fn fixed_assets(balance: &BalanceReport) -> Money {
-    balance.assets().non_current().fixed_assets()
+fn fixed_assets(report: &Report) -> Money {
+    report.balance.assets().non_current().fixed_assets()
 }
 
-fn non_current_financial_assets(balance: &BalanceReport) -> Money {
-    balance.assets().non_current().financial_assets()
+fn non_current_financial_assets(report: &Report) -> Money {
+    report.balance.assets().non_current().financial_assets()
 }
 
-fn non_current_other(balance: &BalanceReport) -> Money {
-    balance.assets().non_current().other()
+fn non_current_other(report: &Report) -> Money {
+    report.balance.assets().non_current().other()
 }
 
-fn physical_inventory(balance: &BalanceReport) -> Money {
-    balance.assets().current().physical_inventory()
+fn physical_inventory(report: &Report) -> Money {
+    report.balance.assets().current().physical_inventory()
 }
 
-fn accounts_receivable(balance: &BalanceReport) -> Money {
-    balance.assets().current().accounts_receivable()
+fn accounts_receivable(report: &Report) -> Money {
+    report.balance.assets().current().accounts_receivable()
 }
 
-fn current_financial_assets(balance: &BalanceReport) -> Money {
-    balance.assets().current().financial_assets()
+fn current_financial_assets(report: &Report) -> Money {
+    report.balance.assets().current().financial_assets()
 }
 
-fn cash(balance: &BalanceReport) -> Money {
-    balance.assets().current().cash()
+fn cash(report: &Report) -> Money {
+    report.balance.assets().current().cash()
 }
 
-fn current_other(balance: &BalanceReport) -> Money {
-    balance.assets().current().other()
+fn current_other(report: &Report) -> Money {
+    report.balance.assets().current().other()
 }
 
-fn total_equity(balance: &BalanceReport) -> Money {
-    balance.equity().total()
+fn total_equity(report: &Report) -> Money {
+    report.balance.equity().total()
 }
 
-fn total_liabilities(balance: &BalanceReport) -> Money {
-    balance.liabilities().total()
+fn total_liabilities(report: &Report) -> Money {
+    report.balance.liabilities().total()
 }
 
-fn total_long_term_liabilities(balance: &BalanceReport) -> Money {
-    balance.liabilities().long_term().total()
+fn total_long_term_liabilities(report: &Report) -> Money {
+    report.balance.liabilities().long_term().total()
 }
 
-fn total_current_liabilities(balance: &BalanceReport) -> Money {
-    balance.liabilities().current().total()
+fn total_current_liabilities(report: &Report) -> Money {
+    report.balance.liabilities().current().total()
 }
 
-fn authorised_capital(balance: &BalanceReport) -> Money {
-    balance.equity().authorised_capital()
+fn authorised_capital(report: &Report) -> Money {
+    report.balance.equity().authorised_capital()
 }
 
-fn capital_surplus(balance: &BalanceReport) -> Money {
-    balance.equity().capital_surplus()
+fn capital_surplus(report: &Report) -> Money {
+    report.balance.equity().capital_surplus()
 }
 
-fn retained_earnings(balance: &BalanceReport) -> Money {
-    balance.equity().retained_earnings()
+fn retained_earnings(report: &Report) -> Money {
+    report.balance.equity().retained_earnings()
 }
 
-fn equity_other(balance: &BalanceReport) -> Money {
-    balance.equity().other()
+fn equity_other(report: &Report) -> Money {
+    report.balance.equity().other()
 }
 
-fn long_term_loans(balance: &BalanceReport) -> Money {
-    balance.liabilities().long_term().loans()
+fn long_term_loans(report: &Report) -> Money {
+    report.balance.liabilities().long_term().loans()
 }
 
-fn long_term_accounts_payable(balance: &BalanceReport) -> Money {
-    balance.liabilities().long_term().accounts_payable()
+fn long_term_accounts_payable(report: &Report) -> Money {
+    report.balance.liabilities().long_term().accounts_payable()
 }
 
-fn long_term_other(balance: &BalanceReport) -> Money {
-    balance.liabilities().long_term().other()
+fn long_term_other(report: &Report) -> Money {
+    report.balance.liabilities().long_term().other()
 }
 
-fn current_loans(balance: &BalanceReport) -> Money {
-    balance.liabilities().current().loans()
+fn current_loans(report: &Report) -> Money {
+    report.balance.liabilities().current().loans()
 }
 
-fn current_accounts_payable(balance: &BalanceReport) -> Money {
-    balance.liabilities().current().accounts_payable()
+fn current_accounts_payable(report: &Report) -> Money {
+    report.balance.liabilities().current().accounts_payable()
 }
 
-fn current_liabilities_other(balance: &BalanceReport) -> Money {
-    balance.liabilities().current().other()
+fn current_liabilities_other(report: &Report) -> Money {
+    report.balance.liabilities().current().other()
 }
 
-type MoneyGetter = fn(&BalanceReport) -> Money;
+fn gross_profit(report: &Report) -> Money {
+    report.income.gross_profit()
+}
+
+fn sales_revenue(report: &Report) -> Money {
+    report.income.gross_profit_segment().sales_revenue()
+}
+
+fn cost_of_sales(report: &Report) -> Money {
+    report.income.gross_profit_segment().cost_of_sales()
+}
+
+fn operational_expenses(report: &Report) -> Money {
+    report.income.operational_segment().operational_expenses()
+}
+
+fn commercial_expenses(report: &Report) -> Money {
+    report.income.operational_segment().commercial_expenses()
+}
+
+fn management_expenses(report: &Report) -> Money {
+    report.income.operational_segment().management_expenses()
+}
+
+fn other_income(report: &Report) -> Money {
+    report.income.operational_segment().other_income()
+}
+
+fn other_expenses(report: &Report) -> Money {
+    report.income.operational_segment().other_expenses()
+}
+
+fn operational_profit(report: &Report) -> Money {
+    report.income.operational_profit()
+}
+
+fn net_financial_expenses(report: &Report) -> Money {
+    report.income.financial_segment().net_financial_expenses()
+}
+
+fn financial_income(report: &Report) -> Money {
+    report.income.financial_segment().financial_income()
+}
+
+fn financial_expenses(report: &Report) -> Money {
+    report.income.financial_segment().financial_expenses()
+}
+
+fn profit_tax(report: &Report) -> Money {
+    report.income.profit_tax()
+}
+
+fn profit_before_tax(report: &Report) -> Money {
+    report.income.profit_before_tax()
+}
+
+fn net_profit(report: &Report) -> Money {
+    report.income.net_profit()
+}
+
+type MoneyGetter = fn(&Report) -> Money;
 
 struct RowDescriptor {
     title: &'static str,
@@ -137,7 +206,7 @@ struct RowDescriptor {
 const CLOSED_MARK: &str = "\u{25b6} "; // Arrow to right
 const OPENED_MARK: &str = "\u{25bc} "; // Arrow down
 const MAX_LEVEL: i32 = 2;
-const TOTALS_ROWS: [RowDescriptor; 26] = [
+const BALANCE_ROWS: [RowDescriptor; 26] = [
     RowDescriptor {
         title: "Assets",
         money_getter: Some(total_assets),
@@ -270,6 +339,84 @@ const TOTALS_ROWS: [RowDescriptor; 26] = [
     },
 ];
 
+const INCOME_ROWS: [RowDescriptor; 15] = [
+    RowDescriptor {
+        title: "Gross profit",
+        money_getter: Some(gross_profit),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Sales revenue",
+        money_getter: Some(sales_revenue),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Cost of sales",
+        money_getter: Some(cost_of_sales),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Operational expenses",
+        money_getter: Some(operational_expenses),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Comercial expenses",
+        money_getter: Some(commercial_expenses),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Management expenses",
+        money_getter: Some(management_expenses),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Other income",
+        money_getter: Some(other_income),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Other expenses",
+        money_getter: Some(other_expenses),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Operational profit",
+        money_getter: Some(operational_profit),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Financial net expenses",
+        money_getter: Some(net_financial_expenses),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Financial income",
+        money_getter: Some(financial_income),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Financial expenses",
+        money_getter: Some(financial_expenses),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Profit before tax",
+        money_getter: Some(profit_before_tax),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Profit tax",
+        money_getter: Some(profit_tax),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Net profit",
+        money_getter: Some(net_profit),
+        level: 0,
+    },
+];
+
 enum ValueDisplayMode {
     Absolute,
     PercentToPrevious,
@@ -280,13 +427,22 @@ struct CompanyReportTable {
     table: Table<'static>,
     table_state: TableState,
     value_display_mode: ValueDisplayMode,
-    balances: HashMap<Period, BalanceReport>,
+    row_descriptors: &'static [RowDescriptor],
+    reports: HashMap<Period, Report>,
     periods: Vec<Period>,
     max_expand_level: i32,
+    // TODO(vchigrin): Find a way to disable PercentFromBalance in more
+    // elegant way...
+    displayed_report_type: DisplayedReportType,
 }
 
 impl CompanyReportTable {
-    fn new(company: model::CompanyInfo, balances: HashMap<Period, BalanceReport>) -> Self {
+    fn new(
+        company: model::CompanyInfo,
+        row_descriptors: &'static [RowDescriptor],
+        reports: HashMap<Period, Report>,
+        displayed_report_type: DisplayedReportType,
+    ) -> Self {
         let mut periods: Vec<Period> = company.raw_reports.keys().copied().collect();
         periods.sort();
 
@@ -312,9 +468,11 @@ impl CompanyReportTable {
                 .column_highlight_style(Style::default().bold()),
             table_state: TableState::default(),
             value_display_mode: ValueDisplayMode::Absolute,
-            balances,
+            reports,
+            row_descriptors,
             periods,
             max_expand_level: 0,
+            displayed_report_type,
         };
         result.build_rows();
         result
@@ -332,8 +490,10 @@ impl CompanyReportTable {
                 self.build_rows();
             }
             KeyCode::Char('v') => {
-                self.value_display_mode = ValueDisplayMode::PercentFromBalance;
-                self.build_rows();
+                if self.displayed_report_type == DisplayedReportType::Balance {
+                    self.value_display_mode = ValueDisplayMode::PercentFromBalance;
+                    self.build_rows();
+                }
             }
             KeyCode::Char('a') => {
                 self.value_display_mode = ValueDisplayMode::Absolute;
@@ -388,14 +548,10 @@ impl CompanyReportTable {
         &self,
         maybe_cur_value: Option<Money>,
         maybe_prev_value: Option<Money>,
-        maybe_balance: Option<&BalanceReport>,
+        report: &Report,
     ) -> Cell<'static> {
         if let Some(cur_value) = maybe_cur_value {
-            let text = self.get_balance_cell_text(
-                cur_value,
-                maybe_prev_value,
-                maybe_balance.expect("TODO: Should we handle empty balance"),
-            );
+            let text = self.get_balance_cell_text(cur_value, maybe_prev_value, &report.balance);
             let mut cell = Cell::new(text);
             if let Some(prev_value) = maybe_prev_value {
                 // Important notice: color here show abolute value difference,
@@ -441,21 +597,17 @@ impl CompanyReportTable {
         let mut cells = vec![self.build_title_cell(descriptor)];
         let mut maybe_prev_value: Option<Money> = None;
         for period in &self.periods {
-            let maybe_balance = self.balances.get(period);
-            let maybe_cur_value: Option<Money> = if let Some(getter) = descriptor.money_getter {
-                maybe_balance.map(getter)
-            } else {
-                None
-            };
-            cells.push(self.build_cell(maybe_cur_value, maybe_prev_value, maybe_balance));
+            let maybe_report = &self.reports.get(period).unwrap();
+            let maybe_cur_value = descriptor.money_getter.map(|getter| getter(maybe_report));
+            cells.push(self.build_cell(maybe_cur_value, maybe_prev_value, maybe_report));
             maybe_prev_value = maybe_cur_value;
         }
         Row::new(cells)
     }
 
     fn build_rows(&mut self) {
-        let mut rows: Vec<Row> = Vec::with_capacity(TOTALS_ROWS.len());
-        for descriptor in &TOTALS_ROWS {
+        let mut rows: Vec<Row> = Vec::with_capacity(self.row_descriptors.len());
+        for descriptor in self.row_descriptors {
             if descriptor.level > self.max_expand_level {
                 continue;
             }
@@ -490,8 +642,17 @@ pub fn process_detailed_company_report(
         }
     };
 
-    let balances = company.build_balances()?;
-    let table = CompanyReportTable::new(company, balances);
+    let reports = company.build_reports()?;
+    let row_descriptors: &'static [RowDescriptor] = match args.displayed_report_type {
+        DisplayedReportType::Balance => &BALANCE_ROWS,
+        DisplayedReportType::Income => &INCOME_ROWS,
+    };
+    let table = CompanyReportTable::new(
+        company,
+        row_descriptors,
+        reports,
+        args.displayed_report_type,
+    );
     let mut terminal = ratatui::init();
     let result = run_report_viewer(&mut terminal, table);
     ratatui::restore();

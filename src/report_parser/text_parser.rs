@@ -473,14 +473,14 @@ impl ReportParser {
             })?;
         log::info!("Parsed operational segment OK: {:?}", operational_segment);
 
-        let operational_profit = operational_segment.operational_profit(gross_profit);
+        let operational_profit = gross_profit + operational_segment.operational_expenses();
         let financial_segment = helper
             .parse_next(IncomeKeys::ProfitBeforeTax, &|report_lines| {
                 Self::parse_financial_segment(operational_profit, report_lines)
             })?;
         log::info!("Parsed financial segment OK: {:?}", financial_segment);
 
-        let profit_before_tax = financial_segment.profit_before_tax(operational_profit);
+        let profit_before_tax = operational_profit + financial_segment.net_financial_expenses();
         let profit_tax = helper.parse_next(IncomeKeys::NetProfit, &|report_lines| {
             Self::parse_profit_tax(profit_before_tax, report_lines)
         })?;
@@ -563,7 +563,7 @@ impl ReportParser {
             other_income.result(),
             other_expenses.result(),
         )?;
-        let calculated_profit = result.operational_profit(gross_profit);
+        let calculated_profit = gross_profit + result.operational_expenses();
         if calculated_profit != operational_profit.result() {
             return Err(eyre!(
                 "Income mismatch in operational profit. Calculated {} provided in report {}",
@@ -590,7 +590,7 @@ impl ReportParser {
             ],
         )?;
         let result = FinancialSegment::new(financial_income.result(), financial_expenses.result())?;
-        let calculated_profit = result.profit_before_tax(operational_profit);
+        let calculated_profit = operational_profit + result.net_financial_expenses();
         if calculated_profit != profit_before_tax.result() {
             return Err(eyre!(
                 "Income mismatch in profit before tax. Calculated {} provided in report {}",

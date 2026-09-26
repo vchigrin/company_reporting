@@ -5,7 +5,7 @@ mod keys;
 mod money;
 mod period;
 
-pub use company::{CompanyInfo, RawReport};
+pub use company::{CompanyInfo, RawReport, Report};
 pub use keys::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 pub use money::Money;
 pub use period::Period;

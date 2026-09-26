@@ -1,4 +1,5 @@
 use super::balance_report::BalanceReport;
+use super::income_report::IncomeReport;
 use super::keys::{BalanceKeys, IncomeKeys, ParsedLineInfo};
 use super::period::Period;
 use crate::report_parser;
@@ -18,18 +19,30 @@ pub struct CompanyInfo {
     pub raw_reports: HashMap<Period, RawReport>,
 }
 
+pub struct Report {
+    pub balance: BalanceReport,
+    pub income: IncomeReport,
+}
+
 impl CompanyInfo {
-    pub fn build_balances(&self) -> Result<HashMap<Period, BalanceReport>> {
-        let mut balances = HashMap::<Period, BalanceReport>::new();
+    pub fn build_reports(&self) -> Result<HashMap<Period, Report>> {
+        let mut result = HashMap::<Period, Report>::new();
         let parser = report_parser::ReportParser::new();
         for (period, raw_report) in &self.raw_reports {
-            let Some(balance_lines) = &raw_report.balance else {
-                log::info!("Period {}: balance report is absent", period.short_string());
+            let balance = if let Some(lines) = &raw_report.balance {
+                parser.parse_balance_report_batch(lines)?
+            } else {
+                log::warn!("No balance report for {:?}", period);
                 continue;
             };
-            let balance = parser.parse_balance_report_batch(balance_lines)?;
-            balances.insert(*period, balance);
+            let income = if let Some(lines) = &raw_report.income {
+                parser.parse_income_report_batch(lines)?
+            } else {
+                log::warn!("No income report for {:?}", period);
+                continue;
+            };
+            result.insert(*period, Report { balance, income });
         }
-        Ok(balances)
+        Ok(result)
     }
 }
