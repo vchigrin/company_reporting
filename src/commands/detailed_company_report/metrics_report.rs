@@ -75,7 +75,15 @@ fn liquidity_cash_ratio(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
-pub const ROWS: [RowDescriptor; 8] = [
+fn debt_to_equity_ratio(metric_input: &MetricInput) -> Option<Metric> {
+    let last_balance = &metric_input.last_report.balance;
+    let debt = last_balance.liabilities().total();
+    let equity = last_balance.equity().total();
+    let result = (debt.in_roubles() as f64) / (equity.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+pub const ROWS: [RowDescriptor; 9] = [
     RowDescriptor {
         title: "Net debt",
         value_getter: ValueGetter::Money(net_debt),
@@ -117,5 +125,10 @@ pub const ROWS: [RowDescriptor; 8] = [
         title: "Cash ratio (<0.2 - r, <0.5 - y)",
         value_getter: ValueGetter::Metric(liquidity_cash_ratio),
         level: 2,
+    },
+    RowDescriptor {
+        title: "Debt/Equitiy (>2 - r, >1.5 - y)",
+        value_getter: ValueGetter::Metric(debt_to_equity_ratio),
+        level: 0,
     },
 ];
