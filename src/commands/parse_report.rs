@@ -2,9 +2,11 @@ use eyre::{Result, eyre};
 
 use crate::model;
 use crate::report_parser;
+use crate::report_parser::lines_classifier;
 use crate::storage;
 use clap::{ArgGroup, Args};
 use std::path;
+use std::rc::Rc;
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("company").required(true).multiple(false).args(["company_inn", "company_name"])))]
@@ -28,23 +30,27 @@ pub struct ParseReportArgs {
 }
 
 fn classify_balance_lines(
+    db: &storage::Storage,
     page_lines: &[String],
     money_multiplier: model::MoneyMultiplier,
 ) -> Result<Vec<model::ParsedLineInfo<model::BalanceKeys>>> {
+    let dict = db.load_keys_dict::<model::BalanceKeys>(model::ReportType::Balance)?;
     let classifier = report_parser::lines_classifier::LinesClassifier::new(
         money_multiplier,
-        report_parser::ReportParser::make_default_balance_keys_classifier(),
+        Rc::new(lines_classifier::MapKeyClasifier::new(dict)),
     );
     classifier.classify_lines(page_lines)
 }
 
 fn classify_income_lines(
+    db: &storage::Storage,
     page_lines: &[String],
     money_multiplier: model::MoneyMultiplier,
 ) -> Result<Vec<model::ParsedLineInfo<model::IncomeKeys>>> {
+    let dict = db.load_keys_dict::<model::IncomeKeys>(model::ReportType::Income)?;
     let classifier = report_parser::lines_classifier::LinesClassifier::new(
         money_multiplier,
-        report_parser::ReportParser::make_default_income_keys_classifier(),
+        Rc::new(lines_classifier::MapKeyClasifier::new(dict)),
     );
     classifier.classify_lines(page_lines)
 }
@@ -75,7 +81,7 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
     let parser = report_parser::ReportParser::new();
     match args.report_type {
         model::ReportType::Balance => {
-            let parsed_lines = classify_balance_lines(&page_lines, args.money_multiplier)?;
+            let parsed_lines = classify_balance_lines(db, &page_lines, args.money_multiplier)?;
             let final_lines = if args.interactive {
                 match parser.parse_balance_report_interactive(parsed_lines)? {
                     Some(r) => r,
@@ -93,7 +99,7 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
             company_report.balance = Some(final_lines);
         }
         model::ReportType::Income => {
-            let parsed_lines = classify_income_lines(&page_lines, args.money_multiplier)?;
+            let parsed_lines = classify_income_lines(db, &page_lines, args.money_multiplier)?;
             let final_lines = if args.interactive {
                 match parser.parse_income_report_interactive(parsed_lines)? {
                     Some(r) => r,

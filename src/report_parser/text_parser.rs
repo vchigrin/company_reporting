@@ -1,4 +1,3 @@
-use super::lines_classifier;
 use crate::model::Money;
 use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
@@ -10,8 +9,6 @@ use crate::model::income_report::{
 use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crate::ui::interactive_lines_editor::{EditResult, InteractiveLinesEditor};
 use eyre::{Result, eyre};
-use std::collections::HashMap;
-use std::rc::Rc;
 
 struct BatchParserHelper<'a, Keys: GenericKeys> {
     analyzed_lines: &'a Vec<ParsedLineInfo<Keys>>,
@@ -98,146 +95,6 @@ pub struct ReportParser {}
 impl ReportParser {
     pub fn new() -> Self {
         Self {}
-    }
-
-    pub fn make_default_balance_keys_classifier()
-    -> Rc<dyn lines_classifier::KeyClassifier<BalanceKeys>> {
-        let mut line_to_balance_key = HashMap::new();
-        // TODO: Move to permanent storage.
-        line_to_balance_key.insert("основные средства".to_owned(), BalanceKeys::FixedAssets);
-        line_to_balance_key.insert(
-            "активы в форме права пользования".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert(
-            "прочие внеоборотные финансовые активы".to_owned(),
-            BalanceKeys::FinancialAssets,
-        );
-        line_to_balance_key.insert("отложенные налоговые активы".to_owned(), BalanceKeys::Other);
-        line_to_balance_key.insert(
-            "итого внеоборотные активы".to_owned(),
-            BalanceKeys::TotalNonCurrentAssets,
-        );
-        line_to_balance_key.insert("запасы".to_owned(), BalanceKeys::PhysicalInventory);
-        line_to_balance_key.insert(
-            "торговая и прочая дебиторская задолженность".to_owned(),
-            BalanceKeys::AccountsReceivable,
-        );
-        line_to_balance_key.insert("авансы выданные".to_owned(), BalanceKeys::Other);
-        line_to_balance_key.insert(
-            "переплата по налогу на прибыль".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert(
-            "переплата по прочим налогам и ндс к возмещению".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert(
-            "прочие оборотные финансовые активы".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert(
-            "денежные средства и их эквиваленты".to_owned(),
-            BalanceKeys::Cash,
-        );
-        line_to_balance_key.insert(
-            "итого оборотные активы".to_owned(),
-            BalanceKeys::TotalCurrentAssets,
-        );
-        //        line_to_balance_key.insert("итого активы".to_owned(), BalanceKeys::TotalAssets);
-        line_to_balance_key.insert(
-            "уставный капитал".to_owned(),
-            BalanceKeys::AuthorisedCapital,
-        );
-        line_to_balance_key.insert(
-            "нераспределенная прибыль".to_owned(),
-            BalanceKeys::RetainedEarnings,
-        );
-        line_to_balance_key.insert(
-            "итого капитал и резервы".to_owned(),
-            BalanceKeys::TotalEquity,
-        );
-        line_to_balance_key.insert("процентные кредиты и займы".to_owned(), BalanceKeys::Loans);
-        line_to_balance_key.insert(
-            "отложенные налоговые обязательства".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert("обязательства по аренде".to_owned(), BalanceKeys::Other);
-        line_to_balance_key.insert(
-            "итого долгосрочные обязательства".to_owned(),
-            BalanceKeys::TotalLongTermLiabilities,
-        );
-        line_to_balance_key.insert("кредиты и займы".to_owned(), BalanceKeys::Loans);
-        line_to_balance_key.insert("обязательства по аренде".to_owned(), BalanceKeys::Other);
-        line_to_balance_key.insert(
-            "торговая и прочая кредиторская задолженность".to_owned(),
-            BalanceKeys::AccountsPayable,
-        );
-        line_to_balance_key.insert("обязательства по договору".to_owned(), BalanceKeys::Other);
-        line_to_balance_key.insert(
-            "текущие обязательства по налогу на прибыль".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert(
-            "кредиторская задолженность по прочим налогам".to_owned(),
-            BalanceKeys::Other,
-        );
-        line_to_balance_key.insert("оценочные обязательства".to_owned(), BalanceKeys::Other);
-        line_to_balance_key.insert(
-            "итого краткосрочные обязательства".to_owned(),
-            BalanceKeys::TotalCurrentLiabilities,
-        );
-        Rc::new(lines_classifier::MapKeyClasifier::new(line_to_balance_key))
-    }
-
-    pub fn make_default_income_keys_classifier()
-    -> Rc<dyn lines_classifier::KeyClassifier<IncomeKeys>> {
-        let mut line_to_income_key = HashMap::new();
-        line_to_income_key.insert("выручка от реализации".to_owned(), IncomeKeys::SalesRevenue);
-        line_to_income_key.insert(
-            "себестоимость реализации".to_owned(),
-            IncomeKeys::CostOfSales,
-        );
-        line_to_income_key.insert("валовая прибыль".to_owned(), IncomeKeys::GrossProfit);
-        line_to_income_key.insert(
-            "общехозяйственные и административные расходы".to_owned(),
-            IncomeKeys::CommercialExpenses,
-        );
-        line_to_income_key.insert(
-            "изменения в ожидаемых кредитных убытках, нетто".to_owned(),
-            IncomeKeys::OtherIncome,
-        );
-        line_to_income_key.insert(
-            "прочие операционные доходы".to_owned(),
-            IncomeKeys::OtherExpenses,
-        );
-        line_to_income_key.insert(
-            "прочие операционные доходы".to_owned(),
-            IncomeKeys::OtherIncome,
-        );
-        line_to_income_key.insert(
-            "операционная прибыль/(убыток)".to_owned(),
-            IncomeKeys::OperationalProfit,
-        );
-        line_to_income_key.insert("финансовые доходы".to_owned(), IncomeKeys::FinancialIncome);
-        line_to_income_key.insert(
-            "финансовые расходы".to_owned(),
-            IncomeKeys::FinancialExpenses,
-        );
-        line_to_income_key.insert("прочие расходы".to_owned(), IncomeKeys::OtherExpenses);
-        line_to_income_key.insert(
-            "прибыль/убыток до налогообложения".to_owned(),
-            IncomeKeys::ProfitBeforeTax,
-        );
-        line_to_income_key.insert(
-            "(расходы)/доходы по налогу за прибыль".to_owned(),
-            IncomeKeys::ProfitTax,
-        );
-        line_to_income_key.insert(
-            "итого совокупный доход/(убыток) за отчётный период".to_owned(),
-            IncomeKeys::NetProfit,
-        );
-        Rc::new(lines_classifier::MapKeyClasifier::new(line_to_income_key))
     }
 
     fn parse_non_current_assets(
