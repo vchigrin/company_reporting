@@ -53,12 +53,19 @@ impl fmt::Display for Metric {
 }
 
 type MoneyGetter = fn(&Report) -> Money;
-// Last twelve month reports, sorted (most recent period last).
-// Guaranted not empty.
-type ReportsLTM = [Report];
-type MetricGetter = fn(&ReportsLTM) -> Metric;
+
+struct MetricInput {
+    // Last twelve month reports, sorted (most recent period last).
+    // Guaranted not empty and contain all required data for last year.
+    // If no data for last twelve month present, then None.
+    reports_ltm: Option<Vec<Report>>,
+    last_report: Report,
+}
+
+type MetricGetter = fn(&MetricInput) -> Option<Metric>;
 
 enum ValueGetter {
+    None,
     Money(MoneyGetter),
     Metric(MetricGetter),
 }

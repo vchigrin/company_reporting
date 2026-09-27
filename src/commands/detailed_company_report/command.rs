@@ -1,7 +1,7 @@
 use super::balance_report;
 use super::income_report;
 use super::metrics_report;
-use super::{Metric, RowDescriptor, ValueGetter};
+use super::{Metric, MetricInput, RowDescriptor, ValueGetter};
 use crate::model;
 use crate::model::balance_report::BalanceReport;
 use crate::model::{Period, Report};
@@ -144,14 +144,14 @@ impl CompanyReportTable {
         balance: &BalanceReport,
     ) -> String {
         match self.value_display_mode {
-            ValueDisplayMode::Absolute => cur_value.to_string(),
+            ValueDisplayMode::Absolute => format!("{:.2}", cur_value),
             ValueDisplayMode::PercentToPrevious => {
                 if let Some(prev_value) = maybe_prev_value {
                     let percent = Metric::percent_increase(prev_value, cur_value);
                     format!("{:+.2}%", percent)
                 } else {
                     // First column will contain abolute values.
-                    cur_value.to_string()
+                    format!("{:.2}", cur_value)
                 }
             }
             ValueDisplayMode::PercentFromBalance => {
@@ -216,24 +216,36 @@ impl CompanyReportTable {
         Cell::new(title).style(style)
     }
 
+    fn collect_ltm_reports(&self, period: Period) -> Option<Vec<Report>> {
+        let ltm_periods = Period::get_periods_for_ltm(period);
+        let mut ltm_reports = Vec::<Report>::with_capacity(ltm_periods.len());
+        for ltm_period in ltm_periods {
+            if let Some(report) = &self.reports.get(&ltm_period) {
+                ltm_reports.push((*report).clone());
+            } else {
+                return None;
+            }
+        }
+        Some(ltm_reports)
+    }
+
     fn build_metric(&self, period: Period, value_getter: &ValueGetter) -> Option<Metric> {
         match value_getter {
+            ValueGetter::None => None,
             ValueGetter::Money(money_getter) => {
                 let maybe_cur_report = &self.reports.get(&period);
                 let maybe_money = maybe_cur_report.map(money_getter);
                 maybe_money.map(Metric::Money)
             }
             ValueGetter::Metric(metric_getter) => {
-                let ltm_periods = Period::get_periods_for_ltm(period);
-                let mut ltm_reports = Vec::<Report>::with_capacity(ltm_periods.len());
-                for ltm_period in ltm_periods {
-                    if let Some(report) = &self.reports.get(&ltm_period) {
-                        ltm_reports.push((*report).clone());
-                    } else {
-                        return None;
-                    }
-                }
-                Some(metric_getter(&ltm_reports))
+                let Some(cur_report) = &self.reports.get(&period) else {
+                    return None;
+                };
+                let metric_input = MetricInput {
+                    reports_ltm: self.collect_ltm_reports(period),
+                    last_report: (*cur_report).clone(),
+                };
+                metric_getter(&metric_input)
             }
         }
     }
