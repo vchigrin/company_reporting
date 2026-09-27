@@ -51,6 +51,15 @@ impl ops::Sub for Money {
     }
 }
 
+impl ops::Div<i64> for Money {
+    type Output = Self;
+    fn div(self, rhs: i64) -> Self {
+        Self {
+            roubles: self.roubles / rhs,
+        }
+    }
+}
+
 impl Money {
     pub fn zero() -> Money {
         Self { roubles: 0 }

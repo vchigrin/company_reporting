@@ -1,4 +1,4 @@
-use super::{Metric, MetricInput, RowDescriptor, ValueGetter};
+use super::{Metric, MetricInput, MoneyGetter, RowDescriptor, ValueGetter};
 use crate::model::{Money, Report};
 
 fn net_debt(report: &Report) -> Money {
@@ -83,7 +83,43 @@ fn debt_to_equity_ratio(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
-pub const ROWS: [RowDescriptor; 9] = [
+fn get_averate_or_last(metric_input: &MetricInput, getter: MoneyGetter) -> Money {
+    if let Some(ltm_reports) = &metric_input.reports_ltm
+        && ltm_reports.len() >= 2
+    {
+        let last_value = getter(&ltm_reports[ltm_reports.len() - 1]);
+        let prev_value = getter(&ltm_reports[ltm_reports.len() - 2]);
+        (last_value + prev_value) / 2
+    } else {
+        getter(&metric_input.last_report)
+    }
+}
+
+fn roa_operational_profit(metric_input: &MetricInput) -> Option<Metric> {
+    let average_assets =
+        get_averate_or_last(metric_input, |report| report.balance.assets().total());
+    let operational_profit = metric_input.last_report.income.operational_profit();
+    let result = (operational_profit.in_roubles() as f64) / (average_assets.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+fn roa_net_profit(metric_input: &MetricInput) -> Option<Metric> {
+    let average_assets =
+        get_averate_or_last(metric_input, |report| report.balance.assets().total());
+    let net_profit = metric_input.last_report.income.net_profit();
+    let result = (net_profit.in_roubles() as f64) / (average_assets.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+fn roe_net_profit(metric_input: &MetricInput) -> Option<Metric> {
+    let average_equity =
+        get_averate_or_last(metric_input, |report| report.balance.equity().total());
+    let net_profit = metric_input.last_report.income.net_profit();
+    let result = (net_profit.in_roubles() as f64) / (average_equity.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+pub const ROWS: [RowDescriptor; 13] = [
     RowDescriptor {
         title: "Net debt",
         value_getter: ValueGetter::Money(net_debt),
@@ -130,5 +166,25 @@ pub const ROWS: [RowDescriptor; 9] = [
         title: "Debt/Equitiy (>2 - r, >1.5 - y)",
         value_getter: ValueGetter::Metric(debt_to_equity_ratio),
         level: 0,
+    },
+    RowDescriptor {
+        title: "Profit margin metrics",
+        value_getter: ValueGetter::None,
+        level: 0,
+    },
+    RowDescriptor {
+        title: "ROA (operational profit)",
+        value_getter: ValueGetter::Metric(roa_operational_profit),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "ROA (net profit)",
+        value_getter: ValueGetter::Metric(roa_net_profit),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "ROE (net profit)",
+        value_getter: ValueGetter::Metric(roe_net_profit),
+        level: 2,
     },
 ];
