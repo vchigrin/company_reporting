@@ -119,7 +119,50 @@ fn roe_net_profit(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
-pub const ROWS: [RowDescriptor; 13] = [
+fn receivable_turnover_ratio(metric_input: &MetricInput) -> Option<Metric> {
+    let average_accounts_receivable = get_averate_or_last(metric_input, |report| {
+        report.balance.assets().current().accounts_receivable()
+    });
+    let sales_revenue = metric_input
+        .last_report
+        .income
+        .gross_profit_segment()
+        .sales_revenue();
+    let result =
+        (average_accounts_receivable.in_roubles() as f64) / (sales_revenue.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+fn inventory_turnover_ratio(metric_input: &MetricInput) -> Option<Metric> {
+    let average_inventory = get_averate_or_last(metric_input, |report| {
+        report.balance.assets().current().physical_inventory()
+    });
+    let cost_of_sales = metric_input
+        .last_report
+        .income
+        .gross_profit_segment()
+        .cost_of_sales()
+        .abs();
+    let result = (average_inventory.in_roubles() as f64) / (cost_of_sales.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+fn payable_turnover_ratio(metric_input: &MetricInput) -> Option<Metric> {
+    let average_accounts_payable = get_averate_or_last(metric_input, |report| {
+        report.balance.liabilities().current().accounts_payable()
+    });
+    let cost_of_sales = metric_input
+        .last_report
+        .income
+        .gross_profit_segment()
+        .cost_of_sales()
+        .abs();
+    let result =
+        (average_accounts_payable.in_roubles() as f64) / (cost_of_sales.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
+pub const ROWS: [RowDescriptor; 17] = [
     RowDescriptor {
         title: "Net debt",
         value_getter: ValueGetter::Money(net_debt),
@@ -185,6 +228,26 @@ pub const ROWS: [RowDescriptor; 13] = [
     RowDescriptor {
         title: "ROE (net profit)",
         value_getter: ValueGetter::Metric(roe_net_profit),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Turnover ratios (less is better)",
+        value_getter: ValueGetter::None,
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Accounts receivable",
+        value_getter: ValueGetter::Metric(receivable_turnover_ratio),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Inventory",
+        value_getter: ValueGetter::Metric(inventory_turnover_ratio),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Accounts payable",
+        value_getter: ValueGetter::Metric(payable_turnover_ratio),
         level: 2,
     },
 ];
