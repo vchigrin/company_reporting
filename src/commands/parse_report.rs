@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("company").required(true).multiple(false).args(["company_inn", "company_name"])))]
+#[command(group(ArgGroup::new("pages").required(true).multiple(false).args(["page_number", "page_from"])))]
 pub struct ParseReportArgs {
     #[arg(long)]
     company_inn: Option<String>,
@@ -22,24 +23,31 @@ pub struct ParseReportArgs {
     #[arg(long)]
     report_path: path::PathBuf,
     #[arg(long)]
-    page_number: i32,
+    page_number: Option<i32>,
+    #[arg(long, requires = "page_to")]
+    page_from: Option<i32>,
+    #[arg(long, requires = "page_from")]
+    page_to: Option<i32>,
     #[arg(long, action=clap::ArgAction::SetTrue)]
     interactive: bool,
     #[arg(long)]
     money_multiplier: model::MoneyMultiplier,
+    #[arg(long)]
+    rsbu: bool,
 }
 
 fn classify_balance_lines(
     db: &storage::Storage,
     page_lines: &[String],
     money_multiplier: model::MoneyMultiplier,
+    rsbu_mode: bool,
 ) -> Result<Vec<model::ParsedLineInfo<model::BalanceKeys>>> {
     let dict = db.load_keys_dict::<model::BalanceKeys>(model::ReportType::Balance)?;
     let classifier = report_parser::lines_classifier::LinesClassifier::new(
         money_multiplier,
         Rc::new(lines_classifier::MapKeyClasifier::new(dict)),
     );
-    classifier.classify_lines(page_lines)
+    classifier.classify_lines(page_lines, rsbu_mode)
 }
 
 fn classify_income_lines(
@@ -52,7 +60,8 @@ fn classify_income_lines(
         money_multiplier,
         Rc::new(lines_classifier::MapKeyClasifier::new(dict)),
     );
-    classifier.classify_lines(page_lines)
+    // RSBU mode does not any special quicks for income report.
+    classifier.classify_lines(page_lines, false)
 }
 
 pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -> Result<()> {
@@ -77,11 +86,19 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
         }
     }
 
-    let page_lines = report_parser::get_page_lines(&args.report_path, args.page_number)?;
+    let page_numbers = match (args.page_number, args.page_from, args.page_to) {
+        (Some(page), None, _) => page..=page,
+        (None, Some(from), Some(to)) => from..=to,
+        _ => {
+            panic!("Conflicting page args passed");
+        }
+    };
+    let page_lines = report_parser::get_page_lines(&args.report_path, page_numbers, args.rsbu)?;
     let parser = report_parser::ReportParser::new();
     match args.report_type {
         model::ReportType::Balance => {
-            let parsed_lines = classify_balance_lines(db, &page_lines, args.money_multiplier)?;
+            let parsed_lines =
+                classify_balance_lines(db, &page_lines, args.money_multiplier, args.rsbu)?;
             let final_lines = if args.interactive {
                 match parser.parse_balance_report_interactive(parsed_lines)? {
                     Some(r) => r,

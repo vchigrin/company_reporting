@@ -86,24 +86,41 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
             .to_owned()
     }
 
-    pub fn classify_lines(&self, page_lines: &[String]) -> Result<Vec<ParsedLineInfo<Keys>>> {
+    pub fn classify_lines(
+        &self,
+        page_lines: &[String],
+        rsbu_mode: bool,
+    ) -> Result<Vec<ParsedLineInfo<Keys>>> {
         let mut result = Vec::new();
         for line in page_lines {
             let tokens: Vec<&str> = Self::split_line_to_tokens(line);
-            if tokens.len() != 3 && tokens.len() != 4 {
-                log::info!("Skipping non-report line {:?}", tokens);
-                continue;
-            }
-            let line_token: String = Self::get_line_token(&tokens);
+            log::info!("Classifying line {:?}", tokens);
+            let current_value_str = if rsbu_mode {
+                // RSBU has one more column with previous values.
+                if tokens.len() != 4 && tokens.len() != 5 {
+                    log::info!("Skipping non-report line {:?}", tokens);
+                    continue;
+                }
+                // Last element is the value of previous period.
+                // One before last - for current period.
+                // Two before last - optional reference to additional info in report.
+                tokens[tokens.len() - 3].to_owned()
+            } else {
+                if tokens.len() != 3 && tokens.len() != 4 {
+                    log::info!("Skipping non-report line {:?}", tokens);
+                    continue;
+                }
+                // Last element is the value of previous period.
+                // One before last - for current period.
+                // Two before last - optional reference to additional info in report.
+                tokens[tokens.len() - 2].to_owned()
+            };
+            let line_token = Self::get_line_token(&tokens);
             let key = self
                 .keys_classifier
                 .try_classify_key(&line_token)
                 .unwrap_or_default();
-            // Last element is the value of previous period.
-            // One before last - for current period.
-            // Two before last - optional reference to additional info in report.
-            let current_value_str = tokens[tokens.len() - 2];
-            let money = match self.parse_money(current_value_str) {
+            let money = match self.parse_money(&current_value_str) {
                 Ok(m) => m,
                 Err(e) => {
                     log::warn!("Error {} on line {}; Skipping", e, line);
@@ -192,12 +209,15 @@ mod tests {
         );
 
         let parsed = classifier_k
-            .classify_lines(&[
-                " фу    1    12    34".to_owned(),
-                " фу         89     -".to_owned(),
-                " бар        -  (12)  ".to_owned(),
-                "unused 1  2   3   5".to_owned(),
-            ])
+            .classify_lines(
+                &[
+                    " фу    1    12    34".to_owned(),
+                    " фу         89     -".to_owned(),
+                    " бар        -  (12)  ".to_owned(),
+                    "unused 1  2   3   5".to_owned(),
+                ],
+                false,
+            )
             .unwrap();
         assert_eq!(parsed.len(), 4);
         assert_eq!(parsed[0].key, TestKeys::Foo);
