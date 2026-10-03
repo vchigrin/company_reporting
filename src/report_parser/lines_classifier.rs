@@ -67,7 +67,18 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
     }
 
     pub fn split_line_to_tokens(line: &str) -> Vec<&str> {
-        line.split("  ").filter(|p| !p.is_empty()).collect()
+        let mut result: Vec<&str> = line.split("  ").filter(|p| !p.is_empty()).collect();
+        if !result.is_empty() {
+            // Remove optional leading "notes" column in RSBU report.
+            if result[0]
+                .trim()
+                .chars()
+                .all(|c| (c.is_ascii_digit() || c == '.'))
+            {
+                result.remove(0);
+            }
+        }
+        result
     }
 
     pub fn get_line_token(tokens: &[&str]) -> String {

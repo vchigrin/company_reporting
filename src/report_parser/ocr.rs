@@ -28,7 +28,7 @@ fn make_png(pdf_file_path: &Path, page_number: i32, dst_dir: &path::Path) -> Res
 
 fn perform_ocr_non_table(img_file_path: &Path) -> Result<Vec<String>> {
     let mut cmd = process::Command::new("tesseract");
-    cmd.args(["-l", "rus"])
+    cmd.args(["-l", "rus+eng"])
         .args(["-c", "preserve_interword_spaces=1"])
         .args(["--psm", "6"])
         .arg(img_file_path)
