@@ -16,13 +16,25 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
 use std::collections::HashMap;
-use strum_macros::EnumString;
+use strum::VariantArray;
+use strum_macros::{EnumString, IntoStaticStr, VariantArray};
 
-#[derive(Debug, Clone, Copy, PartialEq, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, EnumString, IntoStaticStr, VariantArray)]
 pub enum DisplayedReportType {
     Balance,
     Income,
     Metrics,
+}
+
+impl clap::ValueEnum for DisplayedReportType {
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        let val: &'static str = self.into();
+        Some(clap::builder::PossibleValue::new(val))
+    }
+
+    fn value_variants<'a>() -> &'a [Self] {
+        Self::VARIANTS
+    }
 }
 
 #[derive(Debug, Args)]

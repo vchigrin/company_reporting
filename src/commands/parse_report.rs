@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("company").required(true).multiple(false).args(["company_inn", "company_name"])))]
-#[command(group(ArgGroup::new("pages").required(true).multiple(false).args(["page_number", "page_from"])))]
+#[command(group(ArgGroup::new("pages").required(true).multiple(false).args(["page", "page_from"])))]
 pub struct ParseReportArgs {
     #[arg(long)]
     company_inn: Option<String>,
@@ -23,7 +23,7 @@ pub struct ParseReportArgs {
     #[arg(long)]
     report_path: path::PathBuf,
     #[arg(long)]
-    page_number: Option<i32>,
+    page: Option<i32>,
     #[arg(long, requires = "page_to")]
     page_from: Option<i32>,
     #[arg(long, requires = "page_from")]
@@ -86,7 +86,7 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
         }
     }
 
-    let page_numbers = match (args.page_number, args.page_from, args.page_to) {
+    let page_numbers = match (args.page, args.page_from, args.page_to) {
         (Some(page), None, _) => page..=page,
         (None, Some(from), Some(to)) => from..=to,
         _ => {

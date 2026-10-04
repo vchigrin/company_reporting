@@ -11,3 +11,28 @@ pub use edit_report::process_edit_report;
 pub use parse_report::ParseReportArgs;
 pub use parse_report::process_parse_report;
 pub use update_reports_dict::{UpdateReportsDictArgs, process_update_reports_dict};
+
+use crate::model;
+use strum::VariantArray;
+
+impl clap::ValueEnum for model::ReportType {
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        let val: &'static str = self.into();
+        Some(clap::builder::PossibleValue::new(val))
+    }
+
+    fn value_variants<'a>() -> &'a [Self] {
+        Self::VARIANTS
+    }
+}
+
+impl clap::ValueEnum for model::MoneyMultiplier {
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        let val: &'static str = self.into();
+        Some(clap::builder::PossibleValue::new(val))
+    }
+
+    fn value_variants<'a>() -> &'a [Self] {
+        Self::VARIANTS
+    }
+}
