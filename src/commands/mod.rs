@@ -3,7 +3,7 @@ mod edit_report;
 mod parse_report;
 mod update_reports_dict;
 
-pub use detailed_company_report::{GetCompanyArgs, process_detailed_company_report};
+pub use detailed_company_report::{DetailedReportArgs, process_detailed_company_report};
 pub use edit_report::EditReportArgs;
 pub use edit_report::process_edit_report;
 pub use parse_report::ParseReportArgs;

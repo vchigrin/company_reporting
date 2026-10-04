@@ -27,7 +27,7 @@ pub enum DisplayedReportType {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("company").required(true).multiple(false).args(["inn", "name"])))]
-pub struct GetCompanyArgs {
+pub struct DetailedReportArgs {
     #[arg(long)]
     pub inn: Option<String>,
     #[arg(long)]
@@ -289,7 +289,7 @@ fn run_report_viewer(terminal: &mut DefaultTerminal, mut table: CompanyReportTab
 
 pub fn process_detailed_company_report(
     db: &mut storage::Storage,
-    args: &GetCompanyArgs,
+    args: &DetailedReportArgs,
 ) -> Result<()> {
     let company = match (&args.inn, &args.name) {
         (Some(inn), None) => db.get_company_by_inn(inn)?,

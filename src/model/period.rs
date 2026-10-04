@@ -1,17 +1,21 @@
 use eyre::{Result, eyre};
 use std::str::FromStr;
 
+// Order is important for "get-company" command, for order of
+// columns in detailed report etc.
+// Periods is ordered by last month of them.
+// Whith same last month ordered from shorter to longer.
 #[derive(PartialOrd, PartialEq, Eq, Ord, Copy, Clone, Debug, Hash)]
 pub enum PeriodType {
-    FirstHalf,
-    // Artifically constructed from "Full" and "FirstHalf" reports.
-    SecondHalf,
     Q1,
     Q2,
+    FirstHalf,
     Q3,
-    Q4,
     // First 3 quarters.
     Q13,
+    Q4,
+    // Artifically constructed from "Full" and "FirstHalf" reports.
+    SecondHalf,
     Full,
 }
 

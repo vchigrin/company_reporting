@@ -6,7 +6,7 @@ mod command;
 mod income_report;
 mod metrics_report;
 
-pub use command::GetCompanyArgs;
+pub use command::DetailedReportArgs;
 pub use command::process_detailed_company_report;
 
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
