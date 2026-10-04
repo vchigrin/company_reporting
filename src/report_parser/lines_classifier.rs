@@ -94,7 +94,12 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
             .chars()
             .map(|c| {
                 // Leave only lowercase Russian, to strip OCR artifacts.
+                // Allow also few laitn letters for better handling roman
+                // numbers in RSBU reports.
                 if ('а'..='я').contains(&c) {
+                    return c;
+                }
+                if c == 'i' || c == 'v' {
                     return c;
                 }
                 ' '
