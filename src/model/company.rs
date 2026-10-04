@@ -1,6 +1,7 @@
 use super::balance_report::BalanceReport;
 use super::income_report::IncomeReport;
 use super::keys::{BalanceKeys, IncomeKeys, ParsedLineInfo};
+use super::note::Note;
 use super::period::Period;
 use super::ra_conclusion::RAConclusion;
 use crate::report_parser;
@@ -19,6 +20,7 @@ pub struct CompanyInfo {
     pub inn: String,
     pub raw_reports: HashMap<Period, RawReport>,
     pub ra_conclusions: Vec<RAConclusion>,
+    pub notes: Vec<Note>,
 }
 
 #[derive(Clone)]

@@ -16,6 +16,7 @@ const REPORTS: &str = "reports";
 const REPORT_LINES: &str = "report_lines";
 const REPORT_KEYS_DICT: &str = "report_keys_dict";
 const RA_CONCLUSIONS: &str = "ra_conclusions";
+const NOTES: &str = "notes";
 
 impl Storage {
     pub fn new_with_file(path: &Path) -> Result<Self> {
@@ -108,6 +109,20 @@ impl Storage {
                 [],
             )?;
         }
+        if !self.connection.table_exists(None, NOTES)? {
+            self.connection.execute(
+                &format!(
+                    "CREATE TABLE {}(
+                   note_id INTEGER PRIMARY KEY,
+                   company_id INTEGER NOT NULL,
+                   date TEXT NOT NULL,
+                   text TEXT NOT NULL
+                );",
+                    NOTES
+                ),
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -135,6 +150,7 @@ impl Storage {
             }
         }
         Self::overwrite_ra_conclusions(&tx, company_id, &company.ra_conclusions)?;
+        Self::overwrite_notes(&tx, company_id, &company.notes)?;
         tx.commit()?;
         Ok(())
     }
@@ -150,6 +166,7 @@ impl Storage {
             inn: inn.to_owned(),
             raw_reports: self.load_reports(company_id)?,
             ra_conclusions: self.load_ra_conclusions(company_id)?,
+            notes: self.load_notes(company_id)?,
         })
     }
 
@@ -164,6 +181,7 @@ impl Storage {
             inn,
             raw_reports: self.load_reports(company_id)?,
             ra_conclusions: self.load_ra_conclusions(company_id)?,
+            notes: self.load_notes(company_id)?,
         })
     }
 
@@ -245,6 +263,7 @@ impl Storage {
                 inn,
                 raw_reports: self.load_reports(company_id)?,
                 ra_conclusions: self.load_ra_conclusions(company_id)?,
+                notes: self.load_notes(company_id)?,
             });
         }
         Ok(result)
@@ -452,6 +471,54 @@ impl Storage {
         Ok(())
     }
 
+    fn overwrite_notes<'a>(
+        tx: &Transaction<'a>,
+        company_id: i64,
+        notes: &[model::Note],
+    ) -> Result<()> {
+        tx.execute(
+            &format!("DELETE FROM {} WHERE company_id = $company_id", NOTES),
+            named_params! {"$company_id": company_id},
+        )?;
+        let table_max: i64 = tx.query_row(
+            &format!("SELECT COALESCE(MAX(note_id), 0) FROM {}", NOTES),
+            [],
+            |r| r.get(0),
+        )?;
+        let notes_max = notes.iter().map(|note| note.id).max().unwrap_or(0);
+        let mut next_id = table_max.max(notes_max) + 1;
+        // Insert in date order so that freshly assigned ids follow the sort.
+        let mut sorted_notes = notes.to_vec();
+        sorted_notes.sort_by_key(|note| note.date);
+        let mut insert_stmt = tx
+            .prepare(&format!(
+                "INSERT INTO {} (note_id, company_id, date, text) VALUES(
+                   $note_id,
+                   $company_id,
+                   $date,
+                   $text
+                )",
+                NOTES
+            ))
+            .unwrap();
+        for note in sorted_notes {
+            let note_id = if note.id != 0 {
+                note.id
+            } else {
+                let assigned = next_id;
+                next_id += 1;
+                assigned
+            };
+            insert_stmt.execute(named_params! {
+               "$note_id": note_id,
+               "$company_id": company_id,
+               "$date": note.date.to_string(),
+               "$text": note.text,
+            })?;
+        }
+        Ok(())
+    }
+
     fn load_ra_conclusions(&self, company_id: i64) -> Result<Vec<model::RAConclusion>> {
         let mut stmt = self
             .connection
@@ -484,6 +551,39 @@ impl Storage {
         // Storage sorts by ISO date, but sorting here guarantees the invariant
         // even for databases written by other means.
         result.sort_by_key(|conclusion| conclusion.date);
+        Ok(result)
+    }
+
+    fn load_notes(&self, company_id: i64) -> Result<Vec<model::Note>> {
+        let mut stmt = self
+            .connection
+            .prepare(&format!(
+                "SELECT note_id, date, text FROM {}
+                 WHERE company_id = $company_id
+                 ORDER BY date",
+                NOTES
+            ))
+            .unwrap();
+        let mut rows = stmt
+            .query(named_params! {"$company_id": company_id})
+            .unwrap();
+        let mut result = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let note_id = row.get::<usize, i64>(0)?;
+            let date_str = row.get::<usize, String>(1)?;
+            let text = row.get::<usize, String>(2)?;
+            result.push(model::Note {
+                id: note_id,
+                date: Date::parse(
+                    &date_str,
+                    &time::format_description::well_known::Iso8601::DATE,
+                )?,
+                text,
+            });
+        }
+        // Storage sorts by ISO date, but sorting here guarantees the invariant
+        // even for databases written by other means.
+        result.sort_by_key(|note| note.date);
         Ok(result)
     }
 }
@@ -568,6 +668,7 @@ mod tests {
                 inn: "123".to_owned(),
                 raw_reports: HashMap::default(),
                 ra_conclusions: Vec::new(),
+                notes: Vec::new(),
             };
             storage
                 .save_company(&company)
@@ -648,6 +749,19 @@ mod tests {
                     forecast: model::RatingForecast::Positive,
                 },
             ],
+            // Deliberately unsorted: loading from DB must sort by date.
+            notes: vec![
+                model::Note {
+                    id: 0,
+                    date: date!(2025 - 06 - 10),
+                    text: "Второй по дате текст".to_owned(),
+                },
+                model::Note {
+                    id: 0,
+                    date: date!(2024 - 03 - 01),
+                    text: "Первый по дате текст".to_owned(),
+                },
+            ],
         }
     }
 
@@ -676,6 +790,14 @@ mod tests {
         let mut expected_conclusions = original.ra_conclusions.clone();
         expected_conclusions.sort_by_key(|conclusion| conclusion.date);
         assert_eq!(restored.ra_conclusions, expected_conclusions);
+        // Notes are restored and sorted by date in ascending order.
+        let mut expected_notes = original.notes.clone();
+        expected_notes.sort_by_key(|note| note.date);
+        // Fresh notes get ids assigned in date order.
+        for (index, note) in expected_notes.iter_mut().enumerate() {
+            note.id = (index + 1) as i64;
+        }
+        assert_eq!(restored.notes, expected_notes);
     }
 
     fn compare_raw_report(restored: &model::RawReport, expected: &model::RawReport) {
@@ -721,6 +843,7 @@ mod tests {
                 rating: model::Rating::Aaa,
                 forecast: model::RatingForecast::Positive,
             }],
+            notes: Vec::new(),
         };
         storage.save_company(&company).expect("Failed save company");
 
@@ -760,6 +883,61 @@ mod tests {
     }
 
     #[test]
+    fn notes_overwrite() {
+        let mut storage = Storage::new_in_memory().expect("Failed create DB");
+        let mut company = model::CompanyInfo {
+            name: "ООО Пример".to_owned(),
+            inn: "7701122334".to_owned(),
+            raw_reports: HashMap::new(),
+            ra_conclusions: Vec::new(),
+            notes: vec![model::Note {
+                id: 0,
+                date: date!(2024 - 03 - 01),
+                text: "Первый черновик".to_owned(),
+            }],
+        };
+        storage.save_company(&company).expect("Failed save company");
+
+        // Replacing notes must drop old rows and store only new ones.
+        company.notes = vec![
+            model::Note {
+                id: 0,
+                date: date!(2025 - 06 - 10),
+                text: "Второй по дате текст".to_owned(),
+            },
+            model::Note {
+                id: 0,
+                date: date!(2025 - 01 - 15),
+                text: "Первый по дате текст".to_owned(),
+            },
+        ];
+        storage
+            .save_company(&company)
+            .expect("Failed overwrite company");
+
+        let restored = storage
+            .get_company_by_inn(&company.inn)
+            .expect("Failed query company");
+        assert_eq!(restored.notes.len(), 2);
+        assert_eq!(
+            restored.notes[0],
+            model::Note {
+                id: 1,
+                date: date!(2025 - 01 - 15),
+                text: "Первый по дате текст".to_owned(),
+            }
+        );
+        assert_eq!(
+            restored.notes[1],
+            model::Note {
+                id: 2,
+                date: date!(2025 - 06 - 10),
+                text: "Второй по дате текст".to_owned(),
+            }
+        );
+    }
+
+    #[test]
     fn overwrite_reports() {
         fn balance_line(key: BalanceKeys, roubles: i64, line: &str) -> ParsedLineInfo<BalanceKeys> {
             ParsedLineInfo {
@@ -780,6 +958,7 @@ mod tests {
             inn: "7707654321".to_owned(),
             raw_reports: HashMap::new(),
             ra_conclusions: Vec::new(),
+            notes: Vec::new(),
         };
         macro_rules! insert_report {
             ($period:expr, $lines:expr) => {

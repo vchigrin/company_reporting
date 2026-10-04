@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path;
 
 mod commands;
+mod external_editor_helper;
 mod model;
 mod report_parser;
 mod storage;
@@ -38,7 +39,10 @@ enum Command {
     EditReport(commands::EditReportArgs),
     ParseReport(commands::ParseReportArgs),
     AddRAConclusion(commands::AddRAConclusionArgs),
+    AddNote(commands::AddNoteArgs),
+    DeleteNote(commands::DeleteNoteArgs),
     DetailedCompanyReport(commands::DetailedReportArgs),
+    EditNote(commands::EditNoteArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -63,6 +67,7 @@ fn process_add_company(db: &mut storage::Storage, args: &AddCompanyArgs) -> Resu
         inn: args.inn.clone(),
         raw_reports: HashMap::default(),
         ra_conclusions: Vec::new(),
+        notes: Vec::new(),
     };
     db.save_company(&company)?;
     println!("Saved company {:?}", company);
@@ -102,6 +107,12 @@ fn process_get_company(db: &mut storage::Storage, args: &GetCompanyArgs) -> Resu
             conclusion.date, agency, rating, forecast
         );
     }
+    println!("Notes:");
+    for note in &company.notes {
+        println!("#{} {}:", note.id, note.date);
+        println!("{}", note.text);
+        println!();
+    }
     Ok(())
 }
 
@@ -124,9 +135,12 @@ fn process_command(command: &Command) -> Result<()> {
         Command::EditReport(args) => commands::process_edit_report(args, &mut db),
         Command::ParseReport(args) => commands::process_parse_report(args, &mut db),
         Command::AddRAConclusion(args) => commands::process_add_ra_conclusion(args, &mut db),
+        Command::AddNote(args) => commands::process_add_note(args, &mut db),
+        Command::DeleteNote(args) => commands::process_delete_note(args, &mut db),
         Command::DetailedCompanyReport(args) => {
             commands::process_detailed_company_report(&mut db, args)
         }
+        Command::EditNote(args) => commands::process_edit_note(args, &mut db),
     }
 }
 
