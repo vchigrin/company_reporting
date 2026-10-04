@@ -6,6 +6,12 @@ pub enum PeriodType {
     FirstHalf,
     // Artifically constructed from "Full" and "FirstHalf" reports.
     SecondHalf,
+    Q1,
+    Q2,
+    Q3,
+    Q4,
+    // First 3 quarters.
+    Q13,
     Full,
 }
 
@@ -41,6 +47,13 @@ impl Period {
         self.period_type == PeriodType::FirstHalf || self.period_type == PeriodType::SecondHalf
     }
 
+    fn is_quarter(&self) -> bool {
+        self.period_type == PeriodType::Q1
+            || self.period_type == PeriodType::Q2
+            || self.period_type == PeriodType::Q3
+            || self.period_type == PeriodType::Q4
+    }
+
     pub fn short_string(&self) -> String {
         let mut result = String::new();
         result.push_str(&self.year.to_string());
@@ -50,6 +63,21 @@ impl Period {
             }
             PeriodType::SecondHalf => {
                 result += "H2";
+            }
+            PeriodType::Q1 => {
+                result += "Q1";
+            }
+            PeriodType::Q2 => {
+                result += "Q2";
+            }
+            PeriodType::Q3 => {
+                result += "Q3";
+            }
+            PeriodType::Q4 => {
+                result += "Q4";
+            }
+            PeriodType::Q13 => {
+                result += "Q13";
             }
             PeriodType::Full => {
                 result += "FULL";
@@ -63,13 +91,32 @@ impl Period {
             let year_str = &s[..non_digit];
             let suffix = &s[non_digit..];
             let year = i32::from_str(year_str)?;
-            if suffix == "H1" {
-                return Ok(Self::first_half(year));
-            } else if suffix == "H2" {
-                return Ok(Self::second_half(year));
-            } else if suffix == "FULL" {
-                return Ok(Self::full(year));
-            }
+            return match suffix {
+                "H1" => Ok(Self::first_half(year)),
+                "H2" => Ok(Self::second_half(year)),
+                "FULL" => Ok(Self::full(year)),
+                "Q1" => Ok(Self {
+                    year,
+                    period_type: PeriodType::Q1,
+                }),
+                "Q2" => Ok(Self {
+                    year,
+                    period_type: PeriodType::Q2,
+                }),
+                "Q3" => Ok(Self {
+                    year,
+                    period_type: PeriodType::Q3,
+                }),
+                "Q4" => Ok(Self {
+                    year,
+                    period_type: PeriodType::Q4,
+                }),
+                "Q13" => Ok(Self {
+                    year,
+                    period_type: PeriodType::Q13,
+                }),
+                _ => Err(eyre!("Not parsable period suffix {}", s)),
+            };
         }
         Err(eyre!("Not parsable period string {}", s))
     }
@@ -87,20 +134,23 @@ impl Period {
         if has_only_halves {
             return periods;
         }
-        // TODO(vchigrin): Here logic must be extended when we'll add quarter reports.
+        let has_only_quarters = periods.iter().all(|k| k.is_quarter());
+        if has_only_quarters {
+            return periods;
+        }
         let mut result = Vec::new();
-        for period in &periods {
-            if period.is_half() {
-                result.push(*period);
-            } else {
-                result.push(Period {
-                    year: period.year,
-                    period_type: PeriodType::FirstHalf,
-                });
-                result.push(Period {
-                    year: period.year,
-                    period_type: PeriodType::SecondHalf,
-                });
+        let has_any_quarters = periods
+            .iter()
+            .any(|k| k.is_quarter() || k.period_type == PeriodType::Q13);
+        if has_any_quarters {
+            // Need split up to quarter level.
+            for period in &periods {
+                result.extend(period.to_quarters());
+            }
+        } else {
+            // Need handle only halves
+            for period in &periods {
+                result.extend(period.to_halves());
             }
         }
         result.sort();
@@ -108,10 +158,112 @@ impl Period {
         result
     }
 
+    fn to_halves(self) -> Vec<Period> {
+        if self.is_half() {
+            vec![self]
+        } else {
+            vec![
+                Period {
+                    year: self.year,
+                    period_type: PeriodType::FirstHalf,
+                },
+                Period {
+                    year: self.year,
+                    period_type: PeriodType::SecondHalf,
+                },
+            ]
+        }
+    }
+
+    fn to_quarters(self) -> Vec<Period> {
+        match self.period_type {
+            PeriodType::FirstHalf => {
+                vec![
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q2,
+                    },
+                ]
+            }
+            PeriodType::SecondHalf => {
+                vec![
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q3,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q4,
+                    },
+                ]
+            }
+            PeriodType::Q1 => {
+                vec![self]
+            }
+            PeriodType::Q2 => {
+                vec![self]
+            }
+            PeriodType::Q3 => {
+                vec![self]
+            }
+            PeriodType::Q4 => {
+                vec![self]
+            }
+            PeriodType::Q13 => {
+                vec![
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q2,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q3,
+                    },
+                ]
+            }
+            PeriodType::Full => {
+                vec![
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q2,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q3,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q4,
+                    },
+                ]
+            }
+        }
+    }
+
+    // In reports we can encounter only periods of type
+    // FULL, Q1, FirstHalf, Q13.
+    // This methods allows us build any period from them -
+    // returns two periods, substraction of which produces self period.
+    // If this period does not need substraction, then second returned
+    // item is None.
     pub fn make_parts_for_substraction(self) -> (Period, Option<Period>) {
         match self.period_type {
             PeriodType::FirstHalf => (self, None),
             PeriodType::Full => (self, None),
+            PeriodType::Q1 => (self, None),
+            PeriodType::Q13 => (self, None),
             PeriodType::SecondHalf => {
                 let full = Period {
                     year: self.year,
@@ -123,9 +275,45 @@ impl Period {
                 };
                 (full, Some(substracted))
             }
+            PeriodType::Q2 => {
+                let full = Period {
+                    year: self.year,
+                    period_type: PeriodType::FirstHalf,
+                };
+                let substracted = Period {
+                    year: self.year,
+                    period_type: PeriodType::Q1,
+                };
+                (full, Some(substracted))
+            }
+            PeriodType::Q3 => {
+                let full = Period {
+                    year: self.year,
+                    period_type: PeriodType::Q13,
+                };
+                let substracted = Period {
+                    year: self.year,
+                    period_type: PeriodType::FirstHalf,
+                };
+                (full, Some(substracted))
+            }
+            PeriodType::Q4 => {
+                let full = Period {
+                    year: self.year,
+                    period_type: PeriodType::Full,
+                };
+                let substracted = Period {
+                    year: self.year,
+                    period_type: PeriodType::Q13,
+                };
+                (full, Some(substracted))
+            }
         }
     }
 
+    // Returns periods for last year, including current period.
+    // Uses same granularity as current period (e.g. if current period is
+    // Q2, then returns four periods for quarters, rather then two halves.
     pub fn get_periods_for_ltm(self) -> Vec<Period> {
         match self.period_type {
             PeriodType::FirstHalf => {
@@ -142,6 +330,94 @@ impl Period {
                     period_type: PeriodType::FirstHalf,
                 };
                 vec![prev, self]
+            }
+            PeriodType::Q1 => {
+                vec![
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q2,
+                    },
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q3,
+                    },
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q4,
+                    },
+                    self,
+                ]
+            }
+            PeriodType::Q2 => {
+                vec![
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q3,
+                    },
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q4,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    self,
+                ]
+            }
+            PeriodType::Q3 => {
+                vec![
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q4,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q2,
+                    },
+                    self,
+                ]
+            }
+            PeriodType::Q4 => {
+                vec![
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q2,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q3,
+                    },
+                    self,
+                ]
+            }
+            PeriodType::Q13 => {
+                vec![
+                    Period {
+                        year: self.year - 1,
+                        period_type: PeriodType::Q4,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q1,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q2,
+                    },
+                    Period {
+                        year: self.year,
+                        period_type: PeriodType::Q3,
+                    },
+                ]
             }
         }
     }
