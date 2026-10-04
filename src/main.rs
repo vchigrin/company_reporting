@@ -37,6 +37,7 @@ enum Command {
     UpdateDictFromReports(commands::UpdateReportsDictArgs),
     EditReport(commands::EditReportArgs),
     ParseReport(commands::ParseReportArgs),
+    AddRAConclusion(commands::AddRAConclusionArgs),
     DetailedCompanyReport(commands::DetailedReportArgs),
 }
 
@@ -61,6 +62,7 @@ fn process_add_company(db: &mut storage::Storage, args: &AddCompanyArgs) -> Resu
         name: args.name.clone(),
         inn: args.inn.clone(),
         raw_reports: HashMap::default(),
+        ra_conclusions: Vec::new(),
     };
     db.save_company(&company)?;
     println!("Saved company {:?}", company);
@@ -90,6 +92,16 @@ fn process_get_company(db: &mut storage::Storage, args: &GetCompanyArgs) -> Resu
             has_income
         );
     }
+    println!("Known rating agency conclusions:");
+    for conclusion in &company.ra_conclusions {
+        let agency: &'static str = conclusion.rating_agency.into();
+        let rating: &'static str = conclusion.rating.into();
+        let forecast: &'static str = conclusion.forecast.into();
+        println!(
+            "    {}; Agency: {}; Rating: {}; Forecast: {}",
+            conclusion.date, agency, rating, forecast
+        );
+    }
     Ok(())
 }
 
@@ -111,6 +123,7 @@ fn process_command(command: &Command) -> Result<()> {
         }
         Command::EditReport(args) => commands::process_edit_report(args, &mut db),
         Command::ParseReport(args) => commands::process_parse_report(args, &mut db),
+        Command::AddRAConclusion(args) => commands::process_add_ra_conclusion(args, &mut db),
         Command::DetailedCompanyReport(args) => {
             commands::process_detailed_company_report(&mut db, args)
         }

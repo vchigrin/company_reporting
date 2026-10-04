@@ -15,3 +15,4 @@ simple-logging = "2.0.2"
 strum = { version = "0.27.2", features = ["strum_macros"] }
 strum_macros = "0.27.2"
 tempfile = "3.24.0"
+time = { version = "0.3.53", features = ["macros", "parsing", "formatting", "local-offset"] }

@@ -5,6 +5,7 @@ use rusqlite::{Connection, Transaction, named_params};
 use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
+use time::Date;
 
 pub struct Storage {
     connection: Connection,
@@ -14,6 +15,7 @@ const COMPANIES: &str = "companies";
 const REPORTS: &str = "reports";
 const REPORT_LINES: &str = "report_lines";
 const REPORT_KEYS_DICT: &str = "report_keys_dict";
+const RA_CONCLUSIONS: &str = "ra_conclusions";
 
 impl Storage {
     pub fn new_with_file(path: &Path) -> Result<Self> {
@@ -90,6 +92,22 @@ impl Storage {
                 [],
             )?;
         }
+        if !self.connection.table_exists(None, RA_CONCLUSIONS)? {
+            self.connection.execute(
+                &format!(
+                    "CREATE TABLE {}(
+                   ra_conclusion_id INTEGER PRIMARY KEY,
+                   company_id INTEGER NOT NULL,
+                   date TEXT NOT NULL,
+                   rating_agency TEXT NOT NULL,
+                   rating TEXT NOT NULL,
+                   forecast TEXT NOT NULL
+                );",
+                    RA_CONCLUSIONS
+                ),
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -116,6 +134,7 @@ impl Storage {
                 Self::overwrite_report_lines::<IncomeKeys>(&tx, report_id, lines)?;
             }
         }
+        Self::overwrite_ra_conclusions(&tx, company_id, &company.ra_conclusions)?;
         tx.commit()?;
         Ok(())
     }
@@ -130,6 +149,7 @@ impl Storage {
             name,
             inn: inn.to_owned(),
             raw_reports: self.load_reports(company_id)?,
+            ra_conclusions: self.load_ra_conclusions(company_id)?,
         })
     }
 
@@ -143,6 +163,7 @@ impl Storage {
             name: name.to_owned(),
             inn,
             raw_reports: self.load_reports(company_id)?,
+            ra_conclusions: self.load_ra_conclusions(company_id)?,
         })
     }
 
@@ -223,6 +244,7 @@ impl Storage {
                 name,
                 inn,
                 raw_reports: self.load_reports(company_id)?,
+                ra_conclusions: self.load_ra_conclusions(company_id)?,
             });
         }
         Ok(result)
@@ -390,11 +412,86 @@ impl Storage {
         )?;
         Ok(res)
     }
+
+    fn overwrite_ra_conclusions<'a>(
+        tx: &Transaction<'a>,
+        company_id: i64,
+        conclusions: &[model::RAConclusion],
+    ) -> Result<()> {
+        tx.execute(
+            &format!(
+                "DELETE FROM {} WHERE company_id = $company_id",
+                RA_CONCLUSIONS
+            ),
+            named_params! {"$company_id": company_id},
+        )?;
+        let mut insert_stmt = tx
+            .prepare(&format!(
+                "INSERT INTO {} (company_id, date, rating_agency, rating, forecast) VALUES(
+                   $company_id,
+                   $date,
+                   $rating_agency,
+                   $rating,
+                   $forecast
+                )",
+                RA_CONCLUSIONS
+            ))
+            .unwrap();
+        for conclusion in conclusions {
+            let agency: &'static str = conclusion.rating_agency.into();
+            let rating: &'static str = conclusion.rating.into();
+            let forecast: &'static str = conclusion.forecast.into();
+            insert_stmt.execute(named_params! {
+               "$company_id": company_id,
+               "$date": conclusion.date.to_string(),
+               "$rating_agency": agency,
+               "$rating": rating,
+               "$forecast": forecast,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn load_ra_conclusions(&self, company_id: i64) -> Result<Vec<model::RAConclusion>> {
+        let mut stmt = self
+            .connection
+            .prepare(&format!(
+                "SELECT date, rating_agency, rating, forecast FROM {}
+                 WHERE company_id = $company_id
+                 ORDER BY date",
+                RA_CONCLUSIONS
+            ))
+            .unwrap();
+        let mut rows = stmt
+            .query(named_params! {"$company_id": company_id})
+            .unwrap();
+        let mut result = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let date_str = row.get::<usize, String>(0)?;
+            let rating_agency_str = row.get::<usize, String>(1)?;
+            let rating_str = row.get::<usize, String>(2)?;
+            let forecast_str = row.get::<usize, String>(3)?;
+            result.push(model::RAConclusion {
+                date: Date::parse(
+                    &date_str,
+                    &time::format_description::well_known::Iso8601::DATE,
+                )?,
+                rating_agency: model::RatingAgency::from_str(&rating_agency_str)?,
+                rating: model::Rating::from_str(&rating_str)?,
+                forecast: model::RatingForecast::from_str(&forecast_str)?,
+            });
+        }
+        // Storage sorts by ISO date, but sorting here guarantees the invariant
+        // even for databases written by other means.
+        result.sort_by_key(|conclusion| conclusion.date);
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::macros::date;
 
     #[test]
     fn creation_in_memory() {
@@ -470,6 +567,7 @@ mod tests {
                 name: "foo".to_owned(),
                 inn: "123".to_owned(),
                 raw_reports: HashMap::default(),
+                ra_conclusions: Vec::new(),
             };
             storage
                 .save_company(&company)
@@ -535,6 +633,21 @@ mod tests {
             name: "ООО Пример".to_owned(),
             inn: "7701234567".to_owned(),
             raw_reports,
+            // Deliberately unsorted: loading from DB must sort by date.
+            ra_conclusions: vec![
+                model::RAConclusion {
+                    date: date!(2025 - 06 - 10),
+                    rating_agency: model::RatingAgency::ExpertRA,
+                    rating: model::Rating::AAPlus,
+                    forecast: model::RatingForecast::Stable,
+                },
+                model::RAConclusion {
+                    date: date!(2024 - 03 - 01),
+                    rating_agency: model::RatingAgency::Akra,
+                    rating: model::Rating::Aaa,
+                    forecast: model::RatingForecast::Positive,
+                },
+            ],
         }
     }
 
@@ -559,6 +672,10 @@ mod tests {
                 .expect("Missing restored period");
             compare_raw_report(restored_report, raw_report);
         }
+        // Conclusions are restored and sorted by date in ascending order.
+        let mut expected_conclusions = original.ra_conclusions.clone();
+        expected_conclusions.sort_by_key(|conclusion| conclusion.date);
+        assert_eq!(restored.ra_conclusions, expected_conclusions);
     }
 
     fn compare_raw_report(restored: &model::RawReport, expected: &model::RawReport) {
@@ -592,6 +709,57 @@ mod tests {
     }
 
     #[test]
+    fn ra_conclusions_overwrite() {
+        let mut storage = Storage::new_in_memory().expect("Failed create DB");
+        let mut company = model::CompanyInfo {
+            name: "ООО Пример".to_owned(),
+            inn: "7709876543".to_owned(),
+            raw_reports: HashMap::new(),
+            ra_conclusions: vec![model::RAConclusion {
+                date: date!(2024 - 03 - 01),
+                rating_agency: model::RatingAgency::Akra,
+                rating: model::Rating::Aaa,
+                forecast: model::RatingForecast::Positive,
+            }],
+        };
+        storage.save_company(&company).expect("Failed save company");
+
+        // Replacing conclusions must drop old rows and store only new ones.
+        company.ra_conclusions = vec![
+            model::RAConclusion {
+                date: date!(2025 - 06 - 10),
+                rating_agency: model::RatingAgency::ExpertRA,
+                rating: model::Rating::AAPlus,
+                forecast: model::RatingForecast::Stable,
+            },
+            model::RAConclusion {
+                date: date!(2025 - 01 - 15),
+                rating_agency: model::RatingAgency::Nkr,
+                rating: model::Rating::AMinus,
+                forecast: model::RatingForecast::Negative,
+            },
+        ];
+        storage
+            .save_company(&company)
+            .expect("Failed overwrite company");
+
+        let restored = storage
+            .get_company_by_inn(&company.inn)
+            .expect("Failed query company");
+        assert_eq!(restored.ra_conclusions.len(), 2);
+        assert_eq!(restored.ra_conclusions[0].date, date!(2025 - 01 - 15));
+        assert_eq!(
+            restored.ra_conclusions[0].rating_agency,
+            model::RatingAgency::Nkr
+        );
+        assert_eq!(restored.ra_conclusions[1].date, date!(2025 - 06 - 10));
+        assert_eq!(
+            restored.ra_conclusions[1].rating_agency,
+            model::RatingAgency::ExpertRA
+        );
+    }
+
+    #[test]
     fn overwrite_reports() {
         fn balance_line(key: BalanceKeys, roubles: i64, line: &str) -> ParsedLineInfo<BalanceKeys> {
             ParsedLineInfo {
@@ -611,6 +779,7 @@ mod tests {
             name: "ООО Пример".to_owned(),
             inn: "7707654321".to_owned(),
             raw_reports: HashMap::new(),
+            ra_conclusions: Vec::new(),
         };
         macro_rules! insert_report {
             ($period:expr, $lines:expr) => {

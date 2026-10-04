@@ -2,6 +2,7 @@ use super::balance_report::BalanceReport;
 use super::income_report::IncomeReport;
 use super::keys::{BalanceKeys, IncomeKeys, ParsedLineInfo};
 use super::period::Period;
+use super::ra_conclusion::RAConclusion;
 use crate::report_parser;
 use eyre::Result;
 use std::collections::HashMap;
@@ -17,6 +18,7 @@ pub struct CompanyInfo {
     pub name: String,
     pub inn: String,
     pub raw_reports: HashMap<Period, RawReport>,
+    pub ra_conclusions: Vec<RAConclusion>,
 }
 
 #[derive(Clone)]
