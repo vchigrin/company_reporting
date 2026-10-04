@@ -13,6 +13,7 @@ use super::line_edit_dialog::{EditDecision, LineEditDialog};
 
 pub struct InteractiveLinesEditor<Keys: GenericKeys> {
     parsed_lines: Vec<ParsedLineInfo<Keys>>,
+    deleted_lines: Vec<ParsedLineInfo<Keys>>,
     selected_index: usize,
     list_state: ListState,
     mode: Mode<Keys>,
@@ -34,6 +35,7 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
     pub fn new(parsed_lines: Vec<ParsedLineInfo<Keys>>) -> Self {
         Self {
             parsed_lines,
+            deleted_lines: Vec::new(),
             selected_index: 0,
             list_state: ListState::default(),
             mode: Mode::Navigate,
@@ -157,10 +159,19 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
             }
             KeyCode::Char('d') => {
                 if let Some(i) = self.selected() {
-                    self.parsed_lines.remove(i);
+                    let deleted = self.parsed_lines.remove(i);
+                    self.deleted_lines.push(deleted);
                     let len = self.parsed_lines.len();
                     self.selected_index = if len == 0 { 0 } else { i.min(len - 1) };
                     self.status = Some("Line deleted".to_owned());
+                }
+                Ok(None)
+            }
+            KeyCode::Char('u') => {
+                if let Some(line) = self.deleted_lines.pop() {
+                    let idx = self.selected().unwrap_or(self.parsed_lines.len());
+                    self.parsed_lines.insert(idx, line);
+                    self.status = Some("Line restored".to_owned());
                 }
                 Ok(None)
             }
