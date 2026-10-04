@@ -246,7 +246,7 @@ impl ReportParser {
             CurrentLiabilities::new(loans.result(), accounts_payable.result(), other.result());
         if result.total() != total.result() {
             return Err(eyre!(
-                "Balance mismatch in Current term liabilities. Calculated {} provided in report {}",
+                "Balance mismatch in Current liabilities. Calculated {} provided in report {}",
                 result.total(),
                 total.result()
             ));

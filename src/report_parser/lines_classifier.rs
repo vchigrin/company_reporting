@@ -48,6 +48,13 @@ impl<Keys: GenericKeys> LinesClassifier<Keys> {
         let filtered: String = line
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '.')
+            .map(|c| match c {
+                // Tesseract sometimes wrongly recognizes bracket types.
+                // Curly brakets is not expected in any case.
+                '{' => '(',
+                '}' => ')',
+                _ => c,
+            })
             .collect();
         if filtered.is_empty() {
             return Err(eyre!("Can not parse {} as money", line));
