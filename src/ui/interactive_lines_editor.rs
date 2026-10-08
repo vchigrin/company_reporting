@@ -1,4 +1,4 @@
-use crate::model::{GenericKeys, ParsedLineInfo};
+use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crossterm::event::KeyCode;
 use eyre::Result;
 use ratatui::{
@@ -11,7 +11,31 @@ use ratatui::{
 
 use super::line_edit_dialog::{EditDecision, LineEditDialog};
 
-pub struct InteractiveLinesEditor<Keys: GenericKeys> {
+pub trait IsMarkedTrait {
+    fn is_marked(&self) -> bool;
+}
+
+impl IsMarkedTrait for BalanceKeys {
+    fn is_marked(&self) -> bool {
+        *self == BalanceKeys::TotalNonCurrentAssets
+            || *self == BalanceKeys::TotalCurrentAssets
+            || *self == BalanceKeys::TotalEquity
+            || *self == BalanceKeys::TotalLongTermLiabilities
+            || *self == BalanceKeys::TotalCurrentLiabilities
+    }
+}
+
+impl IsMarkedTrait for IncomeKeys {
+    fn is_marked(&self) -> bool {
+        *self == IncomeKeys::SalesRevenue
+            || *self == IncomeKeys::GrossProfit
+            || *self == IncomeKeys::OperationalProfit
+            || *self == IncomeKeys::ProfitBeforeTax
+            || *self == IncomeKeys::NetProfit
+    }
+}
+
+pub struct InteractiveLinesEditor<Keys: GenericKeys + IsMarkedTrait> {
     parsed_lines: Vec<ParsedLineInfo<Keys>>,
     deleted_lines: Vec<ParsedLineInfo<Keys>>,
     selected_index: usize,
@@ -31,7 +55,7 @@ pub enum EditResult {
     CloseWithoutSaving,
 }
 
-impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
+impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
     pub fn new(parsed_lines: Vec<ParsedLineInfo<Keys>>) -> Self {
         Self {
             parsed_lines,
@@ -233,14 +257,21 @@ impl<Keys: GenericKeys> InteractiveLinesEditor<Keys> {
             .highlight_symbol("> ")
     }
 
-    fn render_line<K: GenericKeys>(&self, index: usize, line: &ParsedLineInfo<K>) -> Line<'static> {
+    fn render_line<K: GenericKeys + IsMarkedTrait>(
+        &self,
+        index: usize,
+        line: &ParsedLineInfo<K>,
+    ) -> Line<'static> {
+        let key_color = if line.key.is_marked() {
+            Color::Red
+        } else {
+            Color::Green
+        };
         Line::from(vec![
             Span::styled(format!("{:>3} ", index), Style::default().fg(Color::Yellow)),
             Span::styled(
                 format!("{:<25}", format!("{:?}", line.key)),
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(key_color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{:>16} ", line.value.to_string()),
