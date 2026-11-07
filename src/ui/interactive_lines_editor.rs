@@ -1,4 +1,5 @@
 use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
+use crate::report_parser::FixInfo;
 use crossterm::event::KeyCode;
 use eyre::Result;
 use ratatui::{
@@ -6,9 +7,10 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
+use super::centered_popup_rect;
 use super::line_edit_dialog::{EditDecision, LineEditDialog};
 
 pub trait IsMarkedTrait {
@@ -42,6 +44,7 @@ pub struct InteractiveLinesEditor<Keys: GenericKeys + IsMarkedTrait> {
     list_state: ListState,
     mode: Mode<Keys>,
     status: Option<String>,
+    fix_info: Option<FixInfo<Keys>>,
 }
 
 enum Mode<Keys: GenericKeys> {
@@ -64,6 +67,7 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
             list_state: ListState::default(),
             mode: Mode::Navigate,
             status: None,
+            fix_info: None,
         }
     }
 
@@ -80,6 +84,11 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
 
     pub fn set_error_line(&mut self, error: String) {
         self.status = Some(error);
+    }
+
+    pub fn set_sum_mismatch_error(&mut self, fix: FixInfo<Keys>, msg: String) {
+        self.status = Some(msg);
+        self.fix_info = Some(fix);
     }
 
     fn main_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<EditResult> {
@@ -105,6 +114,9 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Result<Option<EditResult>> {
+        if self.fix_info.is_some() {
+            return self.handle_fix_info_key(key);
+        }
         // Take from mode, to avoid borrowing problems of editor.
         // We'll replace editor in |mode| with the same editor
         // if we decide that editing must continue.
@@ -116,6 +128,43 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
                 Ok(None)
             }
         }
+    }
+
+    fn handle_fix_info_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Result<Option<EditResult>> {
+        match key.code {
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                // Continue editing manually.
+                self.fix_info = None;
+                Ok(None)
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.apply_fix_info()?;
+                self.fix_info = None;
+                Ok(Some(EditResult::SaveAndClose))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn apply_fix_info(&mut self) -> Result<()> {
+        let fix = self
+            .fix_info
+            .as_ref()
+            .expect("Must be called only in fix_info mode");
+        log::info!("Applying fix {:?}", fix);
+        // Always add new line, with proper text, instead of changing random
+        // existing line with matching key.
+        let new_line = ParsedLineInfo::<Keys> {
+            key: fix.line_key_to_modify,
+            value: fix.add_amount,
+            original_line: "Adjustment fix".to_owned(),
+        };
+        log::info!("Inserting line {:?}", new_line);
+        self.parsed_lines.insert(fix.lines_range.start, new_line);
+        Ok(())
     }
 
     fn handle_editing_key(
@@ -223,7 +272,35 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
         }
     }
 
+    fn draw_fix_info_popup(fix_info: &FixInfo<Keys>, f: &mut Frame<'_>) {
+        let area = centered_popup_rect(f.area(), 120, 5);
+        if area.is_empty() {
+            return;
+        }
+        let title = "Sum mismatch error";
+        let popup = Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(Style::default().fg(Color::Red));
+        let inner = popup.inner(area);
+        f.render_widget(popup, area);
+        f.render_widget(Clear, inner);
+        let label = Span::styled(
+            format!(
+                "Suggested adding {} to key {:?} in range {:?}. Press Y/N.",
+                fix_info.add_amount, fix_info.line_key_to_modify, fix_info.lines_range
+            ),
+            Style::default().fg(Color::White),
+        );
+        f.render_widget(label, inner);
+    }
+
     fn draw(&mut self, f: &mut Frame<'_>) {
+        if let Some(fix) = &self.fix_info {
+            Self::draw_fix_info_popup(fix, f);
+            self.draw_status(f);
+            return;
+        }
         self.list_state.select(self.selected());
         let list = self.list_widget();
         f.render_stateful_widget(list, f.area(), &mut self.list_state);

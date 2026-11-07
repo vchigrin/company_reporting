@@ -1,3 +1,4 @@
+use super::centered_popup_rect;
 use super::keys_combo_box::KeysComboBox;
 use crate::model::{GenericKeys, Money, ParsedLineInfo};
 use crossterm::event::KeyCode;
@@ -168,7 +169,7 @@ impl<Keys: GenericKeys> LineEditDialog<Keys> {
     }
 
     pub fn draw_editor_popup(&mut self, f: &mut Frame<'_>) {
-        let area = Self::centered_popup_rect(f.area(), 60, 5);
+        let area = centered_popup_rect(f.area(), 60, 5);
         if area.is_empty() {
             return;
         }
@@ -237,14 +238,5 @@ impl<Keys: GenericKeys> LineEditDialog<Keys> {
                 f.render_widget(&self.raw, textarea_rect);
             }
         }
-    }
-
-    fn centered_popup_rect(area: Rect, h: u16, v: u16) -> Rect {
-        let v_padding = area.height.saturating_sub(v) / 2;
-        let h_padding = area.width.saturating_sub(h) / 2;
-        if v_padding == 0 || h_padding == 0 {
-            return Rect::default();
-        }
-        Rect::new(area.x + h_padding, area.y + v_padding, h, v)
     }
 }

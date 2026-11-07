@@ -1,3 +1,4 @@
+use super::{FixInfo, ParseError};
 use crate::model::Money;
 use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
@@ -8,11 +9,30 @@ use crate::model::income_report::{
 };
 use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crate::ui::interactive_lines_editor::{EditResult, InteractiveLinesEditor};
-use eyre::{Result, eyre};
+use eyre::{Report, Result, eyre};
 
 struct BatchParserHelper<'a, Keys: GenericKeys> {
     analyzed_lines: &'a Vec<ParsedLineInfo<Keys>>,
     next_line_idx: usize,
+}
+
+impl<Keys: GenericKeys> std::fmt::Display for ParseError<Keys> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::<Keys>::SumMismatch { message, fix } => {
+                write!(f, "{}. Amount difference: {}", message, fix.add_amount)
+            }
+            ParseError::Generic(report) => write!(f, "{}", report),
+        }
+    }
+}
+
+impl<Keys: GenericKeys> std::error::Error for ParseError<Keys> {}
+
+impl<Keys: GenericKeys> From<Report> for ParseError<Keys> {
+    fn from(report: Report) -> Self {
+        ParseError::Generic(report)
+    }
 }
 
 impl<'a, Keys: GenericKeys> BatchParserHelper<'a, Keys> {
@@ -27,20 +47,34 @@ impl<'a, Keys: GenericKeys> BatchParserHelper<'a, Keys> {
         &mut self,
         delimeter_key: Keys,
         cb: &TParseCb,
-    ) -> Result<TParseResult>
+    ) -> Result<TParseResult, ParseError<Keys>>
     where
-        TParseCb: Fn(&[ParsedLineInfo<Keys>]) -> Result<TParseResult>,
+        TParseCb: Fn(&[ParsedLineInfo<Keys>]) -> Result<TParseResult, ParseError<Keys>>,
     {
         if let Some(idx) = self.analyzed_lines[self.next_line_idx..]
             .iter()
             .position(|p| p.key == delimeter_key)
         {
-            let result =
-                cb(&self.analyzed_lines[self.next_line_idx..self.next_line_idx + idx + 1])?;
-            self.next_line_idx += idx + 1;
-            Ok(result)
+            let lines_range = self.next_line_idx..self.next_line_idx + idx + 1;
+            let maybe_result = cb(&self.analyzed_lines[lines_range.clone()]);
+            match maybe_result {
+                Ok(result) => {
+                    self.next_line_idx += idx + 1;
+                    Ok(result)
+                }
+                Err(err) => match err {
+                    ParseError::<Keys>::Generic(_) => Err(err),
+                    ParseError::<Keys>::SumMismatch { mut fix, message } => {
+                        fix.lines_range = lines_range;
+                        Err(ParseError::<Keys>::SumMismatch { fix, message })
+                    }
+                },
+            }
         } else {
-            Err(eyre!("Can not found line with {:?} key", delimeter_key))
+            Err(ParseError::Generic(eyre!(
+                "Can not found line with {:?} key",
+                delimeter_key
+            )))
         }
     }
 }
@@ -74,7 +108,7 @@ impl<Keys: GenericKeys> ParsedLineInfoCollector<Keys> {
 fn parse_common_helper<Keys: GenericKeys>(
     report_lines: &[ParsedLineInfo<Keys>],
     all_collectors: &mut [&mut ParsedLineInfoCollector<Keys>],
-) -> Result<()> {
+) -> Result<(), ParseError<Keys>> {
     for item in report_lines {
         let mut accepted = false;
         for collector in &mut *all_collectors {
@@ -84,7 +118,7 @@ fn parse_common_helper<Keys: GenericKeys>(
             }
         }
         if !accepted {
-            return Err(eyre!("Unexpected key {:?}", item.key));
+            return Err(ParseError::Generic(eyre!("Unexpected key {:?}", item.key)));
         }
     }
     Ok(())
@@ -99,7 +133,7 @@ impl ReportParser {
 
     fn parse_non_current_assets(
         non_current_assets_lines: &[ParsedLineInfo<BalanceKeys>],
-    ) -> Result<NonCurrentAssets> {
+    ) -> Result<NonCurrentAssets, ParseError<BalanceKeys>> {
         let mut fixed_assets = Money::zero();
         let mut non_material_assets = Money::zero();
         let mut financial_assets = Money::zero();
@@ -123,23 +157,35 @@ impl ReportParser {
                     total = item.value;
                 }
                 _ => {
-                    return Err(eyre!("Unexpected key {:?} in non-current assets", item.key));
+                    return Err(ParseError::Generic(eyre!(
+                        "Unexpected key {:?} in non-current assets",
+                        item.key
+                    )));
                 }
             }
         }
         let result =
             NonCurrentAssets::new(fixed_assets, non_material_assets, financial_assets, other);
         if result.total() != total {
-            return Err(eyre!(
-                "Balance mismatch in non-current assets. Calculated {} provided in report {}",
-                result.total(),
-                total
-            ));
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in non-current assets. Calculated {} provided in report {}",
+                    result.total(),
+                    total
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total - result.total(),
+                },
+            });
         }
         Ok(result)
     }
 
-    fn parse_current_assets(report_lines: &[ParsedLineInfo<BalanceKeys>]) -> Result<CurrentAssets> {
+    fn parse_current_assets(
+        report_lines: &[ParsedLineInfo<BalanceKeys>],
+    ) -> Result<CurrentAssets, ParseError<BalanceKeys>> {
         let mut physical_inventory = ParsedLineInfoCollector::new(BalanceKeys::PhysicalInventory);
         let mut accounts_receivable = ParsedLineInfoCollector::new(BalanceKeys::AccountsReceivable);
         let mut cash = ParsedLineInfoCollector::new(BalanceKeys::Cash);
@@ -166,16 +212,25 @@ impl ReportParser {
         );
 
         if result.total() != total.result() {
-            return Err(eyre!(
-                "Balance mismatch in current assets. Calculated {} provided in report {}",
-                result.total(),
-                total.result()
-            ));
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in current assets. Calculated {} provided in report {}",
+                    result.total(),
+                    total.result(),
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total.result() - result.total(),
+                },
+            });
         }
         Ok(result)
     }
 
-    fn parse_equity(report_lines: &[ParsedLineInfo<BalanceKeys>]) -> Result<Equity> {
+    fn parse_equity(
+        report_lines: &[ParsedLineInfo<BalanceKeys>],
+    ) -> Result<Equity, ParseError<BalanceKeys>> {
         let mut authorised_capital = ParsedLineInfoCollector::new(BalanceKeys::AuthorisedCapital);
         let mut capital_surplus = ParsedLineInfoCollector::new(BalanceKeys::CapitalSurplus);
         let mut retained_earnings = ParsedLineInfoCollector::new(BalanceKeys::RetainedEarnings);
@@ -198,18 +253,25 @@ impl ReportParser {
             other.result(),
         );
         if result.total() != total.result() {
-            return Err(eyre!(
-                "Balance mismatch in Equity. Calculated {} provided in report {}",
-                result.total(),
-                total.result()
-            ));
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in Equity. Calculated {} provided in report {}",
+                    result.total(),
+                    total.result(),
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total.result() - result.total(),
+                },
+            });
         }
         Ok(result)
     }
 
     fn parse_long_term_liabilities(
         report_lines: &[ParsedLineInfo<BalanceKeys>],
-    ) -> Result<LongTermLiabilities> {
+    ) -> Result<LongTermLiabilities, ParseError<BalanceKeys>> {
         let mut loans = ParsedLineInfoCollector::new(BalanceKeys::Loans);
         let mut accounts_payable = ParsedLineInfoCollector::new(BalanceKeys::AccountsPayable);
         let mut other = ParsedLineInfoCollector::new(BalanceKeys::Other);
@@ -221,18 +283,25 @@ impl ReportParser {
         let result =
             LongTermLiabilities::new(loans.result(), accounts_payable.result(), other.result());
         if result.total() != total.result() {
-            return Err(eyre!(
-                "Balance mismatch in Long term liabilities. Calculated {} provided in report {}",
-                result.total(),
-                total.result()
-            ));
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in Long term liabilities. Calculated {} provided in report {}",
+                    result.total(),
+                    total.result(),
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total.result() - result.total(),
+                },
+            });
         }
         Ok(result)
     }
 
     fn parse_current_liabilities(
         report_lines: &[ParsedLineInfo<BalanceKeys>],
-    ) -> Result<CurrentLiabilities> {
+    ) -> Result<CurrentLiabilities, ParseError<BalanceKeys>> {
         let mut loans = ParsedLineInfoCollector::new(BalanceKeys::Loans);
         let mut accounts_payable = ParsedLineInfoCollector::new(BalanceKeys::AccountsPayable);
         let mut other = ParsedLineInfoCollector::new(BalanceKeys::Other);
@@ -245,11 +314,18 @@ impl ReportParser {
         let result =
             CurrentLiabilities::new(loans.result(), accounts_payable.result(), other.result());
         if result.total() != total.result() {
-            return Err(eyre!(
-                "Balance mismatch in Current liabilities. Calculated {} provided in report {}",
-                result.total(),
-                total.result()
-            ));
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in Current liabilities. Calculated {} provided in report {}",
+                    result.total(),
+                    total.result(),
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total.result() - result.total(),
+                },
+            });
         }
         Ok(result)
     }
@@ -268,9 +344,14 @@ impl ReportParser {
                 Ok(_) => {
                     return Ok(Some(editor.result_lines().clone()));
                 }
-                Err(err) => {
-                    editor.set_error_line(err.to_string());
-                }
+                Err(err) => match err {
+                    ParseError::<BalanceKeys>::Generic(e) => {
+                        editor.set_error_line(e.to_string());
+                    }
+                    ParseError::<BalanceKeys>::SumMismatch { fix, message } => {
+                        editor.set_sum_mismatch_error(fix, message);
+                    }
+                },
             }
         }
     }
@@ -278,7 +359,7 @@ impl ReportParser {
     pub fn parse_balance_report_batch(
         &self,
         parsed_lines: &Vec<ParsedLineInfo<BalanceKeys>>,
-    ) -> Result<BalanceReport> {
+    ) -> Result<BalanceReport, ParseError<BalanceKeys>> {
         let mut helper = BatchParserHelper::new(parsed_lines);
 
         let non_current_assets = helper.parse_next(
@@ -306,11 +387,12 @@ impl ReportParser {
         )?;
         log::info!("Parsed current liabilities OK: {:?}", equity);
 
-        BalanceReport::new(
+        // TODO(vchigrin): Consider issuing SumMismatch error here too.
+        Ok(BalanceReport::new(
             Assets::new(current_assets, non_current_assets),
             equity,
             Liabilities::new(long_term_liabilities, current_liabilities),
-        )
+        )?)
     }
 
     pub fn parse_income_report_batch(
@@ -374,7 +456,7 @@ impl ReportParser {
 
     fn parse_gross_profit(
         report_lines: &[ParsedLineInfo<IncomeKeys>],
-    ) -> Result<GrossProfitSegment> {
+    ) -> Result<GrossProfitSegment, ParseError<IncomeKeys>> {
         let mut sales_revenue = ParsedLineInfoCollector::new(IncomeKeys::SalesRevenue);
         let mut cost_of_sales = ParsedLineInfoCollector::new(IncomeKeys::CostOfSales);
         let mut gross_profit = ParsedLineInfoCollector::new(IncomeKeys::GrossProfit);
@@ -385,11 +467,18 @@ impl ReportParser {
 
         let result = GrossProfitSegment::new(sales_revenue.result(), cost_of_sales.result())?;
         if result.gross_profit() != gross_profit.result() {
-            return Err(eyre!(
-                "Income mismatch in gross profit. Calculated {} provided in report {}",
-                result.gross_profit(),
-                gross_profit.result()
-            ));
+            return Err(ParseError::<IncomeKeys>::SumMismatch {
+                message: format!(
+                    "Income mismatch in gross profit. Calculated {} provided in report {}",
+                    result.gross_profit(),
+                    gross_profit.result(),
+                ),
+                fix: FixInfo::<IncomeKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: IncomeKeys::OtherIncome,
+                    add_amount: gross_profit.result() - result.gross_profit(),
+                },
+            });
         }
         Ok(result)
     }
@@ -397,7 +486,7 @@ impl ReportParser {
     fn parse_operational_segment(
         gross_profit: Money,
         report_lines: &[ParsedLineInfo<IncomeKeys>],
-    ) -> Result<OperationalSegment> {
+    ) -> Result<OperationalSegment, ParseError<IncomeKeys>> {
         let mut commercial_expenses = ParsedLineInfoCollector::new(IncomeKeys::CommercialExpenses);
         let mut management_expenses = ParsedLineInfoCollector::new(IncomeKeys::ManagementExpenses);
         let mut other_income = ParsedLineInfoCollector::new(IncomeKeys::OtherIncome);
@@ -421,12 +510,24 @@ impl ReportParser {
             other_expenses.result(),
         )?;
         let calculated_profit = gross_profit + result.operational_expenses();
+        // TODO(vchigrin): Currently not fixable, since only operating
+        // segment has "other".
         if calculated_profit != operational_profit.result() {
-            return Err(eyre!(
+            /*
+            return Err(ParseError::<IncomeKeys>::SumMismatch {
+                message: format!(
+                    "Income mismatch in operational profit. Calculated {} provided in report {}",
+                    calculated_profit.to_string(),
+                    operational_profit.result().to_string()
+                ),
+                amount: calculated_profit - operational_profit.result(),
+            });
+            */
+            return Err(ParseError::<IncomeKeys>::Generic(eyre!(
                 "Income mismatch in operational profit. Calculated {} provided in report {}",
                 calculated_profit.to_string(),
                 operational_profit.result().to_string()
-            ));
+            )));
         }
         Ok(result)
     }
@@ -434,7 +535,7 @@ impl ReportParser {
     fn parse_financial_segment(
         operational_profit: Money,
         report_lines: &[ParsedLineInfo<IncomeKeys>],
-    ) -> Result<FinancialSegment> {
+    ) -> Result<FinancialSegment, ParseError<IncomeKeys>> {
         let mut financial_income = ParsedLineInfoCollector::new(IncomeKeys::FinancialIncome);
         let mut financial_expenses = ParsedLineInfoCollector::new(IncomeKeys::FinancialExpenses);
         let mut profit_before_tax = ParsedLineInfoCollector::new(IncomeKeys::ProfitBeforeTax);
@@ -448,12 +549,24 @@ impl ReportParser {
         )?;
         let result = FinancialSegment::new(financial_income.result(), financial_expenses.result())?;
         let calculated_profit = operational_profit + result.net_financial_expenses();
+        // TODO(vchigrin): Currently not fixable, since only operating
+        // segment has "other".
         if calculated_profit != profit_before_tax.result() {
-            return Err(eyre!(
+            /*
+            return Err(ParseError::<IncomeKeys>::SumMismatch {
+                message: format!(
+                    "Income mismatch in profit before tax. Calculated {} provided in report {}",
+                    calculated_profit.to_string(),
+                    profit_before_tax.result().to_string()
+                ),
+                amount: calculated_profit - profit_before_tax.result(),
+            });
+            */
+            return Err(ParseError::<IncomeKeys>::Generic(eyre!(
                 "Income mismatch in profit before tax. Calculated {} provided in report {}",
                 calculated_profit.to_string(),
                 profit_before_tax.result().to_string()
-            ));
+            )));
         }
         Ok(result)
     }
@@ -461,19 +574,31 @@ impl ReportParser {
     fn parse_profit_tax(
         profit_before_tax: Money,
         report_lines: &[ParsedLineInfo<IncomeKeys>],
-    ) -> Result<Money> {
+    ) -> Result<Money, ParseError<IncomeKeys>> {
         let mut profit_tax = ParsedLineInfoCollector::new(IncomeKeys::ProfitTax);
         let mut net_profit = ParsedLineInfoCollector::new(IncomeKeys::NetProfit);
         parse_common_helper(report_lines, &mut [&mut profit_tax, &mut net_profit])?;
         // NOTE: seems, profit_tax can be positive in case when company get
         // financial losses before tax.
         let calculated_profit = profit_before_tax + profit_tax.result();
+        // TODO(vchigrin): Currently not fixable, since only operating
+        // segment has "other".
         if calculated_profit != net_profit.result() {
-            return Err(eyre!(
+            /*
+            return Err(ParseError::<IncomeKeys>::SumMismatch {
+                message: format!(
+                    "Net profit mismatch. Calculated {} provided in report {}",
+                    calculated_profit.to_string(),
+                    net_profit.result().to_string()
+                ),
+                amount: calculated_profit - net_profit.result(),
+            });
+            */
+            return Err(ParseError::<IncomeKeys>::Generic(eyre!(
                 "Net profit mismatch. Calculated {} provided in report {}",
                 calculated_profit.to_string(),
                 net_profit.result().to_string()
-            ));
+            )));
         }
         Ok(profit_tax.result())
     }
