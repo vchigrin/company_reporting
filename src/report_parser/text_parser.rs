@@ -6,8 +6,11 @@ use crate::model::balance_report::{
 };
 use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
+    RSBUFinancialAndOtherSegment,
 };
-use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo, RawReport};
+use crate::model::{
+    BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo, RawReport, ReportStandard,
+};
 use crate::ui::interactive_lines_editor::{EditResult, InteractiveLinesEditor};
 use eyre::{Report, Result, eyre};
 
@@ -410,18 +413,38 @@ impl ReportParser {
         log::info!("Parsed gross income OK: {:?}", gross_profit_segment);
 
         let gross_profit = gross_profit_segment.gross_profit();
-        let operational_segment = helper
-            .parse_next(IncomeKeys::OperationalProfit, &|report_lines| {
-                Self::parse_operational_segment(gross_profit, report_lines)
-            })?;
-        log::info!("Parsed operational segment OK: {:?}", operational_segment);
+        let financial_segment: FinancialSegment;
+        let mut operational_segment: OperationalSegment;
+        let operational_profit: Money;
+        if raw_report.standard == ReportStandard::Rsbu {
+            operational_segment = helper
+                .parse_next(IncomeKeys::ProfitFromSales, &|report_lines| {
+                    Self::parse_rsbu_operational_segment(gross_profit, report_lines)
+                })?;
+            log::info!("Parsed RSBU sales segment OK: {:?}", operational_segment);
+            let profit_from_sales = gross_profit + operational_segment.operational_expenses();
+            let rsbu_financial_and_other_segment =
+                helper.parse_next(IncomeKeys::ProfitBeforeTax, &|report_lines| {
+                    Self::parse_rsbu_financial_and_other_segment(profit_from_sales, report_lines)
+                })?;
+            financial_segment = rsbu_financial_and_other_segment.financial_segment;
+            operational_segment.set_other_income(rsbu_financial_and_other_segment.other_income);
+            operational_segment.set_other_expenses(rsbu_financial_and_other_segment.other_expenses);
+            operational_profit = gross_profit + operational_segment.operational_expenses();
+        } else {
+            operational_segment = helper
+                .parse_next(IncomeKeys::OperationalProfit, &|report_lines| {
+                    Self::parse_operational_segment(gross_profit, report_lines)
+                })?;
+            log::info!("Parsed operational segment OK: {:?}", operational_segment);
 
-        let operational_profit = gross_profit + operational_segment.operational_expenses();
-        let financial_segment = helper
-            .parse_next(IncomeKeys::ProfitBeforeTax, &|report_lines| {
-                Self::parse_financial_segment(operational_profit, report_lines)
-            })?;
-        log::info!("Parsed financial segment OK: {:?}", financial_segment);
+            operational_profit = gross_profit + operational_segment.operational_expenses();
+            financial_segment = helper
+                .parse_next(IncomeKeys::ProfitBeforeTax, &|report_lines| {
+                    Self::parse_financial_segment(operational_profit, report_lines)
+                })?;
+            log::info!("Parsed financial segment OK: {:?}", financial_segment);
+        }
 
         let profit_before_tax = operational_profit + financial_segment.net_financial_expenses();
         let profit_tax = helper.parse_next(IncomeKeys::NetProfit, &|report_lines| {
@@ -518,9 +541,48 @@ impl ReportParser {
             other_expenses.result(),
         )?;
         let calculated_profit = gross_profit + result.operational_expenses();
-        // TODO(vchigrin): Currently not fixable, since only operating
-        // segment has "other".
         if calculated_profit != operational_profit.result() {
+            return Err(ParseError::<IncomeKeys>::SumMismatch {
+                message: format!(
+                    "Income mismatch in operational profit. Calculated {} provided in report {}",
+                    calculated_profit,
+                    operational_profit.result(),
+                ),
+                fix: FixInfo::<IncomeKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: IncomeKeys::OtherIncome,
+                    add_amount: calculated_profit - operational_profit.result(),
+                },
+            });
+        }
+        Ok(result)
+    }
+
+    fn parse_rsbu_operational_segment(
+        gross_profit: Money,
+        report_lines: &[ParsedLineInfo<IncomeKeys>],
+    ) -> Result<OperationalSegment, ParseError<IncomeKeys>> {
+        let mut commercial_expenses = ParsedLineInfoCollector::new(IncomeKeys::CommercialExpenses);
+        let mut management_expenses = ParsedLineInfoCollector::new(IncomeKeys::ManagementExpenses);
+        let mut profit_from_sales = ParsedLineInfoCollector::new(IncomeKeys::ProfitFromSales);
+        parse_common_helper(
+            report_lines,
+            &mut [
+                &mut commercial_expenses,
+                &mut management_expenses,
+                &mut profit_from_sales,
+            ],
+        )?;
+
+        let result = OperationalSegment::new(
+            commercial_expenses.result(),
+            management_expenses.result(),
+            /* other_income */ Money::zero(),
+            /* other_expenses */ Money::zero(),
+        )?;
+        let calculated_profit = gross_profit + result.operational_expenses();
+        // TODO(vchigrin): Currently not fixable, since current segment does not have "other"
+        if calculated_profit != profit_from_sales.result() {
             /*
             return Err(ParseError::<IncomeKeys>::SumMismatch {
                 message: format!(
@@ -532,9 +594,9 @@ impl ReportParser {
             });
             */
             return Err(ParseError::<IncomeKeys>::Generic(eyre!(
-                "Income mismatch in operational profit. Calculated {} provided in report {}",
+                "Income mismatch in profit from sales. Calculated {} provided in report {}",
                 calculated_profit.to_string(),
-                operational_profit.result().to_string()
+                profit_from_sales.result().to_string()
             )));
         }
         Ok(result)
@@ -575,6 +637,54 @@ impl ReportParser {
                 calculated_profit.to_string(),
                 profit_before_tax.result().to_string()
             )));
+        }
+        Ok(result)
+    }
+
+    fn parse_rsbu_financial_and_other_segment(
+        profit_from_sales: Money,
+        report_lines: &[ParsedLineInfo<IncomeKeys>],
+    ) -> Result<RSBUFinancialAndOtherSegment, ParseError<IncomeKeys>> {
+        let mut financial_income = ParsedLineInfoCollector::new(IncomeKeys::FinancialIncome);
+        let mut financial_expenses = ParsedLineInfoCollector::new(IncomeKeys::FinancialExpenses);
+        let mut other_income = ParsedLineInfoCollector::new(IncomeKeys::OtherIncome);
+        let mut other_expenses = ParsedLineInfoCollector::new(IncomeKeys::OtherExpenses);
+        let mut profit_before_tax = ParsedLineInfoCollector::new(IncomeKeys::ProfitBeforeTax);
+        parse_common_helper(
+            report_lines,
+            &mut [
+                &mut financial_income,
+                &mut financial_expenses,
+                &mut other_income,
+                &mut other_expenses,
+                &mut profit_before_tax,
+            ],
+        )?;
+        let financial_segment =
+            FinancialSegment::new(financial_income.result(), financial_expenses.result())?;
+
+        let calculated_profit = profit_from_sales
+            + financial_segment.net_financial_expenses()
+            + other_income.result()
+            + other_expenses.result();
+        let result = RSBUFinancialAndOtherSegment {
+            financial_segment,
+            other_income: other_income.result(),
+            other_expenses: other_expenses.result(),
+        };
+        if calculated_profit != profit_before_tax.result() {
+            return Err(ParseError::<IncomeKeys>::SumMismatch {
+                message: format!(
+                    "Income mismatch in profit before tax. Calculated {} provided in report {}",
+                    calculated_profit,
+                    profit_before_tax.result()
+                ),
+                fix: FixInfo::<IncomeKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: IncomeKeys::OtherIncome,
+                    add_amount: calculated_profit - profit_before_tax.result(),
+                },
+            });
         }
         Ok(result)
     }

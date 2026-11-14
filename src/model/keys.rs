@@ -68,6 +68,8 @@ pub enum IncomeKeys {
     ManagementExpenses,
     // Операционная прибыль
     OperationalProfit,
+    // Прибыль от продаж. Актуально для РСБУ.
+    ProfitFromSales,
     // Финансовые доходы
     FinancialIncome,
     // Финансовые расходы

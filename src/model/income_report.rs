@@ -71,8 +71,16 @@ impl OperationalSegment {
         self.other_income
     }
 
+    pub fn set_other_income(&mut self, val: Money) {
+        self.other_income = val
+    }
+
     pub fn other_expenses(&self) -> Money {
         self.other_expenses
+    }
+
+    pub fn set_other_expenses(&mut self, val: Money) {
+        self.other_expenses = val
     }
 }
 
@@ -108,6 +116,15 @@ pub struct FinancialSegment {
     financial_income: Money,
     // Финансовые расходы
     financial_expenses: Money,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct RSBUFinancialAndOtherSegment {
+    pub financial_segment: FinancialSegment,
+    // Прочие доходы
+    pub other_income: Money,
+    // Прочие расходы
+    pub other_expenses: Money,
 }
 
 impl FinancialSegment {
