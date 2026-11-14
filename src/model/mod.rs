@@ -7,7 +7,7 @@ mod note;
 mod period;
 mod ra_conclusion;
 
-pub use company::{CompanyInfo, RawReport, Report};
+pub use company::{CompanyInfo, RawReport, Report, ReportSet, ReportStandard};
 pub use keys::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 pub use money::Money;
 pub use note::Note;

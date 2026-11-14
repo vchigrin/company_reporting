@@ -1,24 +1,37 @@
 use super::balance_report::BalanceReport;
 use super::income_report::IncomeReport;
-use super::keys::{BalanceKeys, IncomeKeys, ParsedLineInfo};
+use super::keys::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use super::note::Note;
 use super::period::Period;
 use super::ra_conclusion::RAConclusion;
 use crate::report_parser;
 use eyre::Result;
 use std::collections::HashMap;
+use strum_macros::{EnumString, IntoStaticStr, VariantArray};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, VariantArray, IntoStaticStr)]
+pub enum ReportStandard {
+    Rsbu,
+    Msfo,
+}
+
+#[derive(Debug)]
+pub struct RawReport<Keys: GenericKeys> {
+    pub lines: Vec<ParsedLineInfo<Keys>>,
+    pub standard: ReportStandard,
+}
 
 #[derive(Debug, Default)]
-pub struct RawReport {
-    pub balance: Option<Vec<ParsedLineInfo<BalanceKeys>>>,
-    pub income: Option<Vec<ParsedLineInfo<IncomeKeys>>>,
+pub struct ReportSet {
+    pub balance: Option<RawReport<BalanceKeys>>,
+    pub income: Option<RawReport<IncomeKeys>>,
 }
 
 #[derive(Debug)]
 pub struct CompanyInfo {
     pub name: String,
     pub inn: String,
-    pub raw_reports: HashMap<Period, RawReport>,
+    pub raw_reports: HashMap<Period, ReportSet>,
     pub ra_conclusions: Vec<RAConclusion>,
     pub notes: Vec<Note>,
 }
@@ -81,15 +94,15 @@ impl CompanyInfo {
     fn build_full_reports(&self) -> Result<HashMap<Period, Report>> {
         let mut result = HashMap::<Period, Report>::new();
         let parser = report_parser::ReportParser::new();
-        for (period, raw_report) in &self.raw_reports {
-            let balance = if let Some(lines) = &raw_report.balance {
-                parser.parse_balance_report_batch(lines)?
+        for (period, report_set) in &self.raw_reports {
+            let balance = if let Some(b) = &report_set.balance {
+                parser.parse_balance_report_batch(b)?
             } else {
                 log::warn!("No balance report for {:?}", period);
                 continue;
             };
-            let income = if let Some(lines) = &raw_report.income {
-                parser.parse_income_report_batch(lines)?
+            let income = if let Some(i) = &report_set.income {
+                parser.parse_income_report_batch(i)?
             } else {
                 log::warn!("No income report for {:?}", period);
                 continue;

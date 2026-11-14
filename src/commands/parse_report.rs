@@ -72,7 +72,7 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
             panic!("Conflicting args passed");
         }
     };
-    let company_report: &mut model::RawReport = company.raw_reports.entry(args.period).or_default();
+    let company_report: &mut model::ReportSet = company.raw_reports.entry(args.period).or_default();
     match args.report_type {
         model::ReportType::Balance => {
             if let Some(existing) = &company_report.balance {
@@ -99,8 +99,16 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
         model::ReportType::Balance => {
             let parsed_lines =
                 classify_balance_lines(db, &page_lines, args.money_multiplier, args.rsbu)?;
-            let final_lines = if args.interactive {
-                match parser.parse_balance_report_interactive(parsed_lines)? {
+            let raw_report = model::RawReport::<model::BalanceKeys> {
+                lines: parsed_lines,
+                standard: if args.rsbu {
+                    model::ReportStandard::Rsbu
+                } else {
+                    model::ReportStandard::Msfo
+                },
+            };
+            let final_report = if args.interactive {
+                match parser.parse_balance_report_interactive(&raw_report)? {
                     Some(r) => r,
                     None => {
                         // User cancelled
@@ -110,15 +118,23 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
             } else {
                 // Verify that lines are correct and Income can be constructed
                 // from this lines set.
-                parser.parse_balance_report_batch(&parsed_lines)?;
-                parsed_lines
+                parser.parse_balance_report_batch(&raw_report)?;
+                raw_report
             };
-            company_report.balance = Some(final_lines);
+            company_report.balance = Some(final_report);
         }
         model::ReportType::Income => {
             let parsed_lines = classify_income_lines(db, &page_lines, args.money_multiplier)?;
-            let final_lines = if args.interactive {
-                match parser.parse_income_report_interactive(parsed_lines)? {
+            let raw_report = model::RawReport::<model::IncomeKeys> {
+                lines: parsed_lines,
+                standard: if args.rsbu {
+                    model::ReportStandard::Rsbu
+                } else {
+                    model::ReportStandard::Msfo
+                },
+            };
+            let final_report = if args.interactive {
+                match parser.parse_income_report_interactive(&raw_report)? {
                     Some(r) => r,
                     None => {
                         // User cancelled
@@ -128,10 +144,10 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
             } else {
                 // Verify that lines are correct and Income can be constructed
                 // from this lines set.
-                parser.parse_income_report_batch(&parsed_lines)?;
-                parsed_lines
+                parser.parse_income_report_batch(&raw_report)?;
+                raw_report
             };
-            company_report.income = Some(final_lines);
+            company_report.income = Some(final_report);
         }
     }
     db.save_company(&company)?;

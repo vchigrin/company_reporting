@@ -56,6 +56,7 @@ impl Storage {
                    company_id INTEGER NOT NULL,
                    report_type TEXT NOT NULL,
                    report_period TEXT NOT NULL,
+                   report_standard TEXT NOT NULL,
                    CONSTRAINT unique_report UNIQUE (company_id, report_type, report_period)
                 );",
                     REPORTS
@@ -129,24 +130,26 @@ impl Storage {
     pub fn save_company(&mut self, company: &model::CompanyInfo) -> Result<()> {
         let tx = self.connection.transaction()?;
         let company_id = Self::insert_and_get_company_id(&tx, company)?;
-        for (key, report) in &company.raw_reports {
-            if let Some(lines) = &report.balance {
+        for (key, report_set) in &company.raw_reports {
+            if let Some(report) = &report_set.balance {
                 let report_id = Self::insert_and_get_report_id(
                     &tx,
                     company_id,
                     key,
+                    report.standard,
                     model::ReportType::Balance,
                 )?;
-                Self::overwrite_report_lines::<BalanceKeys>(&tx, report_id, lines)?;
+                Self::overwrite_report_lines::<BalanceKeys>(&tx, report_id, &report.lines)?;
             }
-            if let Some(lines) = &report.income {
+            if let Some(report) = &report_set.income {
                 let report_id = Self::insert_and_get_report_id(
                     &tx,
                     company_id,
                     key,
+                    report.standard,
                     model::ReportType::Income,
                 )?;
-                Self::overwrite_report_lines::<IncomeKeys>(&tx, report_id, lines)?;
+                Self::overwrite_report_lines::<IncomeKeys>(&tx, report_id, &report.lines)?;
             }
         }
         Self::overwrite_ra_conclusions(&tx, company_id, &company.ra_conclusions)?;
@@ -164,7 +167,7 @@ impl Storage {
         Ok(model::CompanyInfo {
             name,
             inn: inn.to_owned(),
-            raw_reports: self.load_reports(company_id)?,
+            raw_reports: self.load_report_sets(company_id)?,
             ra_conclusions: self.load_ra_conclusions(company_id)?,
             notes: self.load_notes(company_id)?,
         })
@@ -179,7 +182,7 @@ impl Storage {
         Ok(model::CompanyInfo {
             name: name.to_owned(),
             inn,
-            raw_reports: self.load_reports(company_id)?,
+            raw_reports: self.load_report_sets(company_id)?,
             ra_conclusions: self.load_ra_conclusions(company_id)?,
             notes: self.load_notes(company_id)?,
         })
@@ -261,7 +264,7 @@ impl Storage {
             result.push(model::CompanyInfo {
                 name,
                 inn,
-                raw_reports: self.load_reports(company_id)?,
+                raw_reports: self.load_report_sets(company_id)?,
                 ra_conclusions: self.load_ra_conclusions(company_id)?,
                 notes: self.load_notes(company_id)?,
             });
@@ -306,30 +309,35 @@ impl Storage {
         Ok(())
     }
 
-    fn load_reports(&self, company_id: i64) -> Result<HashMap<model::Period, model::RawReport>> {
+    fn load_report_sets(
+        &self,
+        company_id: i64,
+    ) -> Result<HashMap<model::Period, model::ReportSet>> {
         let mut stmt = self.connection.prepare(&format!(
-            "SELECT report_id, report_type, report_period FROM {} WHERE company_id = $company_id",
+            "SELECT report_id, report_type, report_period, report_standard FROM {} WHERE company_id = $company_id",
             REPORTS
         )).unwrap();
         let mut rows = stmt
             .query(named_params! {"$company_id": company_id})
             .unwrap();
-        let mut result = HashMap::<model::Period, model::RawReport>::new();
+        let mut result = HashMap::<model::Period, model::ReportSet>::new();
         while let Some(row) = rows.next().unwrap() {
             let report_id = row.get::<usize, i64>(0)?;
             let report_type_str = row.get::<usize, String>(1)?;
             let report_period_str = row.get::<usize, String>(2)?;
+            let report_standard_str = row.get::<usize, String>(3)?;
             let report_type = model::ReportType::from_str(&report_type_str)?;
+            let report_standard = model::ReportStandard::from_str(&report_standard_str)?;
 
             let report_period = model::Period::from_short_string(&report_period_str)?;
             if let Some(r) = result.get_mut(&report_period) {
-                self.fill_raw_report(r, report_type, report_id)?;
+                self.fill_raw_report(r, report_type, report_standard, report_id)?;
             } else {
-                let mut new_report = model::RawReport {
+                let mut new_report = model::ReportSet {
                     balance: None,
                     income: None,
                 };
-                self.fill_raw_report(&mut new_report, report_type, report_id)?;
+                self.fill_raw_report(&mut new_report, report_type, report_standard, report_id)?;
                 result.insert(report_period, new_report);
             }
         }
@@ -338,20 +346,27 @@ impl Storage {
 
     fn fill_raw_report(
         &self,
-        r: &mut model::RawReport,
+        r: &mut model::ReportSet,
         report_type: model::ReportType,
+        report_standard: model::ReportStandard,
         report_id: i64,
     ) -> Result<()> {
         match report_type {
             model::ReportType::Balance => {
                 assert!(r.balance.is_none());
                 let lines = self.load_report_lines::<BalanceKeys>(report_id)?;
-                r.balance = Some(lines);
+                r.balance = Some(model::RawReport::<BalanceKeys> {
+                    lines,
+                    standard: report_standard,
+                });
             }
             model::ReportType::Income => {
                 assert!(r.income.is_none());
                 let lines = self.load_report_lines::<IncomeKeys>(report_id)?;
-                r.income = Some(lines);
+                r.income = Some(model::RawReport::<IncomeKeys> {
+                    lines,
+                    standard: report_standard,
+                });
             }
         }
         Ok(())
@@ -389,20 +404,23 @@ impl Storage {
         tx: &Transaction<'a>,
         company_id: i64,
         period: &model::Period,
+        standard: model::ReportStandard,
         report_type: model::ReportType,
     ) -> Result<i64> {
         let query = format!(
-            "INSERT OR REPLACE INTO {} (company_id, report_type, report_period)
-             VALUES($company_id, $report_type, $report_period)
+            "INSERT OR REPLACE INTO {} (company_id, report_type, report_period, report_standard)
+             VALUES($company_id, $report_type, $report_period, $report_standard)
              RETURNING report_id;",
             REPORTS
         );
         let report_type_str: &'static str = report_type.into();
+        let report_standard_str: &'static str = standard.into();
         let res: i64 = tx.query_one(
             &query,
             named_params! {
                "$company_id": company_id,
                "$report_type": report_type_str,
+               "$report_standard": report_standard_str,
                "$report_period": period.short_string(),
             },
             |r| r.get(0),
@@ -723,9 +741,15 @@ mod tests {
         ] {
             raw_reports.insert(
                 period,
-                model::RawReport {
-                    balance: Some(balance),
-                    income: Some(income),
+                model::ReportSet {
+                    balance: Some(model::RawReport::<BalanceKeys> {
+                        lines: balance,
+                        standard: model::ReportStandard::Rsbu,
+                    }),
+                    income: Some(model::RawReport::<IncomeKeys> {
+                        lines: income,
+                        standard: model::ReportStandard::Rsbu,
+                    }),
                 },
             );
         }
@@ -784,7 +808,7 @@ mod tests {
                 .raw_reports
                 .get(period)
                 .expect("Missing restored period");
-            compare_raw_report(restored_report, raw_report);
+            compare_report_set(restored_report, raw_report);
         }
         // Conclusions are restored and sorted by date in ascending order.
         let mut expected_conclusions = original.ra_conclusions.clone();
@@ -800,11 +824,11 @@ mod tests {
         assert_eq!(restored.notes, expected_notes);
     }
 
-    fn compare_raw_report(restored: &model::RawReport, expected: &model::RawReport) {
+    fn compare_report_set(restored: &model::ReportSet, expected: &model::ReportSet) {
         let (restored_balance, expected_balance) =
             (restored.balance.as_ref(), expected.balance.as_ref());
         match (restored_balance, expected_balance) {
-            (Some(rb), Some(eb)) => compare_lines(rb, eb),
+            (Some(rb), Some(eb)) => compare_raw_report(rb, eb),
             (None, None) => {}
             _ => panic!("balance presence mismatch"),
         }
@@ -812,18 +836,19 @@ mod tests {
         let (restored_income, expected_income) =
             (restored.income.as_ref(), expected.income.as_ref());
         match (restored_income, expected_income) {
-            (Some(ri), Some(ei)) => compare_lines(ri, ei),
+            (Some(ri), Some(ei)) => compare_raw_report(ri, ei),
             (None, None) => {}
             _ => panic!("income presence mismatch"),
         }
     }
 
-    fn compare_lines<Keys: crate::model::GenericKeys>(
-        restored: &[crate::model::ParsedLineInfo<Keys>],
-        expected: &[crate::model::ParsedLineInfo<Keys>],
+    fn compare_raw_report<Keys: crate::model::GenericKeys>(
+        restored: &crate::model::RawReport<Keys>,
+        expected: &crate::model::RawReport<Keys>,
     ) {
-        assert_eq!(restored.len(), expected.len());
-        for (r, e) in restored.iter().zip(expected.iter()) {
+        assert_eq!(restored.standard, expected.standard);
+        assert_eq!(restored.lines.len(), expected.lines.len());
+        for (r, e) in restored.lines.iter().zip(expected.lines.iter()) {
             assert_eq!(r.key, e.key);
             assert_eq!(r.value, e.value);
             assert_eq!(r.original_line, e.original_line);
@@ -946,9 +971,12 @@ mod tests {
                 original_line: line.to_owned(),
             }
         }
-        fn balance_only_report(lines: Vec<ParsedLineInfo<BalanceKeys>>) -> model::RawReport {
-            model::RawReport {
-                balance: Some(lines),
+        fn balance_only_report(lines: Vec<ParsedLineInfo<BalanceKeys>>) -> model::ReportSet {
+            model::ReportSet {
+                balance: Some(model::RawReport {
+                    lines,
+                    standard: model::ReportStandard::Rsbu,
+                }),
                 income: None,
             }
         }
@@ -1002,7 +1030,7 @@ mod tests {
         // Modify in memory: add a line to one report, remove from another,
         // change a line in the third.
         let modified = company.raw_reports.get_mut(&period_add).unwrap();
-        modified.balance.as_mut().unwrap().push(balance_line(
+        modified.balance.as_mut().unwrap().lines.push(balance_line(
             BalanceKeys::AccountsReceivable,
             300,
             "Дебиторка 300",
@@ -1015,16 +1043,18 @@ mod tests {
             .balance
             .as_mut()
             .unwrap()
+            .lines
             .remove(2);
 
         {
-            let lines = company
+            let lines = &mut company
                 .raw_reports
                 .get_mut(&period_change)
                 .unwrap()
                 .balance
                 .as_mut()
-                .unwrap();
+                .unwrap()
+                .lines;
             lines[1] = balance_line(BalanceKeys::Cash, 999, "Денежные средства 999");
         }
 
@@ -1041,7 +1071,7 @@ mod tests {
                 .raw_reports
                 .get(period)
                 .expect("Missing restored period");
-            compare_raw_report(restored_report, expected_report);
+            compare_report_set(restored_report, expected_report);
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::model::balance_report::{
 use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
 };
-use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
+use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo, RawReport};
 use crate::ui::interactive_lines_editor::{EditResult, InteractiveLinesEditor};
 use eyre::{Report, Result, eyre};
 
@@ -332,17 +332,21 @@ impl ReportParser {
 
     pub fn parse_balance_report_interactive(
         &self,
-        parsed_lines: Vec<ParsedLineInfo<BalanceKeys>>,
-    ) -> Result<Option<Vec<ParsedLineInfo<BalanceKeys>>>> {
-        let mut editor = InteractiveLinesEditor::new(parsed_lines);
+        raw_report: &RawReport<BalanceKeys>,
+    ) -> Result<Option<RawReport<BalanceKeys>>> {
+        let mut editor = InteractiveLinesEditor::new(raw_report.lines.clone());
         loop {
             let edit_result = editor.run_editor()?;
             if edit_result == EditResult::CloseWithoutSaving {
                 return Ok(None);
             }
-            match self.parse_balance_report_batch(editor.result_lines()) {
+            let edited_report = RawReport::<BalanceKeys> {
+                lines: editor.result_lines().clone(),
+                standard: raw_report.standard,
+            };
+            match self.parse_balance_report_batch(&edited_report) {
                 Ok(_) => {
-                    return Ok(Some(editor.result_lines().clone()));
+                    return Ok(Some(edited_report));
                 }
                 Err(err) => match err {
                     ParseError::<BalanceKeys>::Generic(e) => {
@@ -358,9 +362,9 @@ impl ReportParser {
 
     pub fn parse_balance_report_batch(
         &self,
-        parsed_lines: &Vec<ParsedLineInfo<BalanceKeys>>,
+        raw_report: &RawReport<BalanceKeys>,
     ) -> Result<BalanceReport, ParseError<BalanceKeys>> {
-        let mut helper = BatchParserHelper::new(parsed_lines);
+        let mut helper = BatchParserHelper::new(&raw_report.lines);
 
         let non_current_assets = helper.parse_next(
             BalanceKeys::TotalNonCurrentAssets,
@@ -397,9 +401,9 @@ impl ReportParser {
 
     pub fn parse_income_report_batch(
         &self,
-        parsed_lines: &Vec<ParsedLineInfo<IncomeKeys>>,
+        raw_report: &RawReport<IncomeKeys>,
     ) -> Result<IncomeReport> {
-        let mut helper = BatchParserHelper::<IncomeKeys>::new(parsed_lines);
+        let mut helper = BatchParserHelper::<IncomeKeys>::new(&raw_report.lines);
 
         let gross_profit_segment =
             helper.parse_next(IncomeKeys::GrossProfit, &Self::parse_gross_profit)?;
@@ -435,17 +439,21 @@ impl ReportParser {
 
     pub fn parse_income_report_interactive(
         &self,
-        parsed_lines: Vec<ParsedLineInfo<IncomeKeys>>,
-    ) -> Result<Option<Vec<ParsedLineInfo<IncomeKeys>>>> {
-        let mut editor = InteractiveLinesEditor::new(parsed_lines);
+        raw_report: &RawReport<IncomeKeys>,
+    ) -> Result<Option<RawReport<IncomeKeys>>> {
+        let mut editor = InteractiveLinesEditor::new(raw_report.lines.clone());
         loop {
             let edit_result = editor.run_editor()?;
             if edit_result == EditResult::CloseWithoutSaving {
                 return Ok(None);
             }
-            match self.parse_income_report_batch(editor.result_lines()) {
+            let edited_report = RawReport::<IncomeKeys> {
+                lines: editor.result_lines().clone(),
+                standard: raw_report.standard,
+            };
+            match self.parse_income_report_batch(&edited_report) {
                 Ok(_) => {
-                    return Ok(Some(editor.result_lines().clone()));
+                    return Ok(Some(edited_report));
                 }
                 Err(err) => {
                     editor.set_error_line(err.to_string());

@@ -16,7 +16,7 @@ fn update_dict<Keys: GenericKeys>(
     report_type: model::ReportType,
     db: &mut storage::Storage,
     companies: &[CompanyInfo],
-    get_lines: fn(&model::RawReport) -> Option<&Vec<ParsedLineInfo<Keys>>>,
+    get_lines: fn(&model::ReportSet) -> Option<&Vec<ParsedLineInfo<Keys>>>,
     force: bool,
 ) -> Result<()> {
     let mut dict: HashMap<String, Keys> = db.load_keys_dict::<Keys>(report_type)?;
@@ -53,14 +53,14 @@ pub fn process_update_reports_dict(
         model::ReportType::Balance,
         db,
         &companies,
-        |r| r.balance.as_ref(),
+        |r| r.balance.as_ref().map(|b| &b.lines),
         force,
     )?;
     update_dict::<model::IncomeKeys>(
         model::ReportType::Income,
         db,
         &companies,
-        |r| r.income.as_ref(),
+        |r| r.income.as_ref().map(|b| &b.lines),
         force,
     )?;
 
