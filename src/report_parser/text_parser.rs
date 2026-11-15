@@ -99,6 +99,26 @@ impl<'a, Keys: GenericKeys> BatchParserHelper<'a, Keys> {
             )))
         }
     }
+
+    fn ensure_next_key(&mut self, key: Keys) -> Result<Money, ParseError<Keys>> {
+        if self.next_line_idx < self.analyzed_lines.len()
+            && self.analyzed_lines[self.next_line_idx].key == key
+        {
+            let result = self.analyzed_lines[self.next_line_idx].value;
+            self.next_line_idx += 1;
+            Ok(result)
+        } else {
+            Err(ParseError::Generic(eyre!(
+                "Expecting {:?} key at position {}",
+                key,
+                self.next_line_idx
+            )))
+        }
+    }
+
+    fn next_line_idx(&self) -> usize {
+        self.next_line_idx
+    }
 }
 
 struct ParsedLineInfoCollector<Keys: GenericKeys> {
@@ -392,33 +412,87 @@ impl ReportParser {
             BalanceKeys::TotalNonCurrentAssets,
             &Self::parse_non_current_assets,
         )?;
-        log::info!("Parsed non-current assets OK: {:?}", non_current_assets);
+        log::info!(
+            "Parsed non-current assets OK: {:?}; Sum {}",
+            non_current_assets,
+            non_current_assets.total()
+        );
 
         let current_assets =
             helper.parse_next(BalanceKeys::TotalCurrentAssets, &Self::parse_current_assets)?;
-        log::info!("Parsed current assets OK: {:?}", current_assets);
+        log::info!(
+            "Parsed current assets OK: {:?}; Sum {}",
+            current_assets,
+            current_assets.total()
+        );
+
+        let assets_line_boundary = helper.next_line_idx();
+        let total_balance = helper.ensure_next_key(BalanceKeys::TotalBalance)?;
+        let assets = Assets::new(current_assets, non_current_assets);
+        log::info!("Parsed assets OK: {:?}; Sum {}", assets, assets.total());
+        if assets.total() != total_balance {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in assets section. Calculated {} provided in report {}",
+                    assets.total(),
+                    total_balance
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: 0..assets_line_boundary,
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total_balance - assets.total(),
+                },
+            });
+        }
 
         let equity = helper.parse_next(BalanceKeys::TotalEquity, &Self::parse_equity)?;
-        log::info!("Parsed equity OK: {:?}", equity);
+        log::info!("Parsed equity OK: {:?}; Sum {}", equity, equity.total());
 
         let long_term_liabilities = helper.parse_next(
             BalanceKeys::TotalLongTermLiabilities,
             &Self::parse_long_term_liabilities,
         )?;
-        log::info!("Parsed long term liabilities OK: {:?}", equity);
+        log::info!(
+            "Parsed long term liabilities OK: {:?}; Sum {}",
+            long_term_liabilities,
+            long_term_liabilities.total()
+        );
 
         let current_liabilities = helper.parse_next(
             BalanceKeys::TotalCurrentLiabilities,
             &Self::parse_current_liabilities,
         )?;
-        log::info!("Parsed current liabilities OK: {:?}", equity);
+        log::info!(
+            "Parsed current liabilities OK: {:?}; Sum {}",
+            current_liabilities,
+            current_liabilities.total()
+        );
 
-        // TODO(vchigrin): Consider issuing SumMismatch error here too.
-        Ok(BalanceReport::new(
-            Assets::new(current_assets, non_current_assets),
-            equity,
-            Liabilities::new(long_term_liabilities, current_liabilities),
-        )?)
+        let liabilities = Liabilities::new(long_term_liabilities, current_liabilities);
+        log::info!(
+            "Parsed liabilities OK: {:?}; Sum {}",
+            liabilities,
+            liabilities.total()
+        );
+
+        if liabilities.total() + equity.total() != total_balance {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "Balance mismatch in equity+liabilities section. Calculated {} provided in report {}",
+                    liabilities.total() + equity.total(),
+                    total_balance
+                ),
+                fix: FixInfo::<BalanceKeys> {
+                    lines_range: (assets_line_boundary + 1)..raw_report.lines.len(),
+                    line_key_to_modify: BalanceKeys::Other,
+                    add_amount: total_balance - liabilities.total() - equity.total(),
+                },
+            });
+        }
+
+        // Don't expect error here, since balance equality is checked in
+        // current function.
+        Ok(BalanceReport::new(assets, equity, liabilities).unwrap())
     }
 
     pub fn parse_income_report_batch(

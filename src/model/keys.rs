@@ -49,6 +49,7 @@ pub enum BalanceKeys {
     TotalLongTermLiabilities,
     // Итого краткосрочные обязательства
     TotalCurrentLiabilities,
+    TotalBalance,
     // Прочее
     #[default]
     Other,

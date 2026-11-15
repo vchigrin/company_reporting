@@ -24,6 +24,7 @@ impl IsMarkedTrait for BalanceKeys {
             || *self == BalanceKeys::TotalEquity
             || *self == BalanceKeys::TotalLongTermLiabilities
             || *self == BalanceKeys::TotalCurrentLiabilities
+            || *self == BalanceKeys::TotalBalance
     }
 }
 
