@@ -1,6 +1,7 @@
 use super::balance_report::BalanceReport;
+use super::cash_flow_report::CashFlowReport;
 use super::income_report::IncomeReport;
-use super::keys::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
+use super::keys::{BalanceKeys, CashFlowKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use super::note::Note;
 use super::period::Period;
 use super::ra_conclusion::RAConclusion;
@@ -25,6 +26,7 @@ pub struct RawReport<Keys: GenericKeys> {
 pub struct ReportSet {
     pub balance: Option<RawReport<BalanceKeys>>,
     pub income: Option<RawReport<IncomeKeys>>,
+    pub cash_flow: Option<RawReport<CashFlowKeys>>,
 }
 
 #[derive(Debug)]
@@ -40,6 +42,7 @@ pub struct CompanyInfo {
 pub struct Report {
     pub balance: BalanceReport,
     pub income: IncomeReport,
+    pub cash_flow: CashFlowReport,
 }
 
 impl CompanyInfo {
@@ -88,7 +91,12 @@ impl CompanyInfo {
         // Balance is the same as at the end of full period.
         let balance = full.balance.clone();
         let income = full.income.clone() - substracted.income.clone();
-        Report { balance, income }
+        let cash_flow = full.cash_flow.clone() - substracted.cash_flow.clone();
+        Report {
+            balance,
+            income,
+            cash_flow,
+        }
     }
 
     fn build_full_reports(&self) -> Result<HashMap<Period, Report>> {
@@ -107,7 +115,20 @@ impl CompanyInfo {
                 log::warn!("No income report for {:?}", period);
                 continue;
             };
-            result.insert(*period, Report { balance, income });
+            let cash_flow = if let Some(i) = &report_set.cash_flow {
+                parser.parse_cash_flow_report_batch(i)?
+            } else {
+                log::warn!("No cash flow report for {:?}", period);
+                continue;
+            };
+            result.insert(
+                *period,
+                Report {
+                    balance,
+                    income,
+                    cash_flow,
+                },
+            );
         }
         Ok(result)
     }

@@ -1,4 +1,4 @@
-use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
+use crate::model::{BalanceKeys, CashFlowKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use crate::report_parser::FixInfo;
 use crossterm::event::KeyCode;
 use eyre::Result;
@@ -34,6 +34,17 @@ impl IsMarkedTrait for IncomeKeys {
             || *self == IncomeKeys::OperationalProfit
             || *self == IncomeKeys::ProfitBeforeTax
             || *self == IncomeKeys::NetProfit
+    }
+}
+
+impl IsMarkedTrait for CashFlowKeys {
+    fn is_marked(&self) -> bool {
+        *self == CashFlowKeys::TotalIncome
+            || *self == CashFlowKeys::TotalExpenses
+            || *self == CashFlowKeys::NetOperationalCashFlow
+            || *self == CashFlowKeys::NetInvestmentCashFlow
+            || *self == CashFlowKeys::NetFinancialCashFlow
+            || *self == CashFlowKeys::NetTotalCashFlow
     }
 }
 

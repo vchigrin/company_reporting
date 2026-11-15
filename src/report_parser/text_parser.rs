@@ -4,12 +4,17 @@ use crate::model::balance_report::{
     Assets, BalanceReport, CurrentAssets, CurrentLiabilities, Equity, Liabilities,
     LongTermLiabilities, NonCurrentAssets,
 };
+use crate::model::cash_flow_report::{
+    CashFlowReport, FinancialCashFlow, FinancialInFlow, FinancialOutFlow, InvestmentCashFlow,
+    InvestmentInFlow, InvestmentOutFlow, OperationalCashFlow, OperationalInFlow,
+    OperationalOutFlow,
+};
 use crate::model::income_report::{
     FinancialSegment, GrossProfitSegment, IncomeReport, OperationalSegment,
     RSBUFinancialAndOtherSegment,
 };
 use crate::model::{
-    BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo, RawReport, ReportStandard,
+    BalanceKeys, CashFlowKeys, GenericKeys, IncomeKeys, ParsedLineInfo, RawReport, ReportStandard,
 };
 use crate::ui::interactive_lines_editor::{EditResult, InteractiveLinesEditor};
 use eyre::{Report, Result, eyre};
@@ -77,6 +82,20 @@ impl<'a, Keys: GenericKeys> BatchParserHelper<'a, Keys> {
             Err(ParseError::Generic(eyre!(
                 "Can not found line with {:?} key",
                 delimeter_key
+            )))
+        }
+    }
+
+    fn peek_next_key(&self, key: Keys) -> Result<Money, ParseError<Keys>> {
+        if let Some(idx) = self.analyzed_lines[self.next_line_idx..]
+            .iter()
+            .position(|p| p.key == key)
+        {
+            Ok(self.analyzed_lines[self.next_line_idx + idx].value)
+        } else {
+            Err(ParseError::Generic(eyre!(
+                "Can not found line with {:?} key",
+                key
             )))
         }
     }
@@ -460,6 +479,312 @@ impl ReportParser {
         ))
     }
 
+    pub fn parse_cash_flow_report_batch(
+        &self,
+        raw_report: &RawReport<CashFlowKeys>,
+    ) -> Result<CashFlowReport> {
+        let mut helper = BatchParserHelper::<CashFlowKeys>::new(&raw_report.lines);
+
+        let operational_flow = helper.parse_next(
+            CashFlowKeys::NetOperationalCashFlow,
+            &Self::parse_operational_cash_flow,
+        )?;
+        log::info!("Parsed operational cash flow OK: {:?}", operational_flow);
+
+        let investment_flow = helper.parse_next(
+            CashFlowKeys::NetInvestmentCashFlow,
+            &Self::parse_investment_cash_flow,
+        )?;
+        log::info!("Parsed investment cash flow OK: {:?}", investment_flow);
+
+        let financial_flow = helper.parse_next(
+            CashFlowKeys::NetFinancialCashFlow,
+            &Self::parse_financial_cash_flow,
+        )?;
+        log::info!("Parsed financial cash flow OK: {:?}", investment_flow);
+
+        let result = CashFlowReport::new(operational_flow, investment_flow, financial_flow);
+        let net_cash_flow = helper.peek_next_key(CashFlowKeys::NetTotalCashFlow)?;
+        if result.net_result() != net_cash_flow {
+            // Not known which exactly cash flow we shoul adjust, so use
+            // Generic error for now.
+            return Err(ParseError::<CashFlowKeys>::Generic(eyre!(
+                "Cash flow mismatch. Calculated {} provided in report {}",
+                result.net_result().to_string(),
+                net_cash_flow.to_string()
+            ))
+            .into());
+        }
+        Ok(result)
+    }
+
+    fn parse_operational_cash_flow(
+        report_lines: &[ParsedLineInfo<CashFlowKeys>],
+    ) -> Result<OperationalCashFlow, ParseError<CashFlowKeys>> {
+        let mut sales_income = ParsedLineInfoCollector::new(CashFlowKeys::SalesIncome);
+        let mut percent_income = ParsedLineInfoCollector::new(CashFlowKeys::PercentIncome);
+        let mut other_income = ParsedLineInfoCollector::new(CashFlowKeys::OtherIncome);
+
+        let mut supplier_expenses = ParsedLineInfoCollector::new(CashFlowKeys::SupplierExpenses);
+        let mut salaries_expenses = ParsedLineInfoCollector::new(CashFlowKeys::SalariesExpenses);
+        let mut percent_expenses = ParsedLineInfoCollector::new(CashFlowKeys::PercentExpenses);
+        let mut tax_expenses = ParsedLineInfoCollector::new(CashFlowKeys::TaxExpenses);
+        let mut other_expenses = ParsedLineInfoCollector::new(CashFlowKeys::OtherExpenses);
+
+        let mut total_income = ParsedLineInfoCollector::new(CashFlowKeys::TotalIncome);
+        let mut total_expenses = ParsedLineInfoCollector::new(CashFlowKeys::TotalExpenses);
+        let mut net_cash_flow = ParsedLineInfoCollector::new(CashFlowKeys::NetOperationalCashFlow);
+
+        parse_common_helper(
+            report_lines,
+            &mut [
+                &mut sales_income,
+                &mut percent_income,
+                &mut other_income,
+                &mut supplier_expenses,
+                &mut salaries_expenses,
+                &mut percent_expenses,
+                &mut tax_expenses,
+                &mut other_expenses,
+                &mut total_income,
+                &mut total_expenses,
+                &mut net_cash_flow,
+            ],
+        )?;
+        let in_flow = OperationalInFlow::new(
+            sales_income.result(),
+            percent_income.result(),
+            other_income.result(),
+        );
+        let out_flow = OperationalOutFlow::new(
+            supplier_expenses.result(),
+            salaries_expenses.result(),
+            percent_expenses.result(),
+            tax_expenses.result(),
+            other_expenses.result(),
+        );
+        log::info!("Unchecked operational in_flow {:?}", in_flow);
+        if in_flow.net_result() != total_income.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in opertational incoming cf. Calculated {} provided in report {}",
+                    in_flow.net_result(),
+                    total_income.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherIncome,
+                    add_amount: total_income.result() - in_flow.net_result(),
+                },
+            });
+        }
+        log::info!("Unchecked operational out_flow {:?}", out_flow);
+        if out_flow.net_result() != total_expenses.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in opertational expenses cf. Calculated {} provided in report {}",
+                    out_flow.net_result(),
+                    total_expenses.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherExpenses,
+                    add_amount: total_expenses.result() - out_flow.net_result(),
+                },
+            });
+        }
+
+        let result = OperationalCashFlow::new(in_flow, out_flow);
+        if result.net_result() != net_cash_flow.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in opertational total cf. Calculated {} provided in report {}",
+                    result.net_result(),
+                    net_cash_flow.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherIncome,
+                    add_amount: net_cash_flow.result() - result.net_result(),
+                },
+            });
+        }
+        Ok(result)
+    }
+
+    fn parse_investment_cash_flow(
+        report_lines: &[ParsedLineInfo<CashFlowKeys>],
+    ) -> Result<InvestmentCashFlow, ParseError<CashFlowKeys>> {
+        let mut capital_sales = ParsedLineInfoCollector::new(CashFlowKeys::CapitalSales);
+        let mut other_income = ParsedLineInfoCollector::new(CashFlowKeys::OtherIncome);
+
+        let mut capital_expenses = ParsedLineInfoCollector::new(CashFlowKeys::CapitalExpenses);
+        let mut other_expenses = ParsedLineInfoCollector::new(CashFlowKeys::OtherExpenses);
+
+        let mut total_income = ParsedLineInfoCollector::new(CashFlowKeys::TotalIncome);
+        let mut total_expenses = ParsedLineInfoCollector::new(CashFlowKeys::TotalExpenses);
+        let mut net_cash_flow = ParsedLineInfoCollector::new(CashFlowKeys::NetInvestmentCashFlow);
+
+        parse_common_helper(
+            report_lines,
+            &mut [
+                &mut capital_sales,
+                &mut other_income,
+                &mut capital_expenses,
+                &mut other_expenses,
+                &mut total_income,
+                &mut total_expenses,
+                &mut net_cash_flow,
+            ],
+        )?;
+        let in_flow = InvestmentInFlow::new(capital_sales.result(), other_income.result());
+        let out_flow = InvestmentOutFlow::new(capital_expenses.result(), other_expenses.result());
+        log::info!("Unchecked investment in_flow {:?}", in_flow);
+        if in_flow.net_result() != total_income.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in investment incoming cf. Calculated {} provided in report {}",
+                    in_flow.net_result(),
+                    total_income.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherIncome,
+                    add_amount: total_income.result() - in_flow.net_result(),
+                },
+            });
+        }
+        log::info!("Unchecked investment out_flow {:?}", out_flow);
+        if out_flow.net_result() != total_expenses.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in investment expenses cf. Calculated {} provided in report {}",
+                    out_flow.net_result(),
+                    total_expenses.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherExpenses,
+                    add_amount: total_expenses.result() - out_flow.net_result(),
+                },
+            });
+        }
+
+        let result = InvestmentCashFlow::new(in_flow, out_flow);
+        if result.net_result() != net_cash_flow.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in investment total cf. Calculated {} provided in report {}",
+                    result.net_result(),
+                    net_cash_flow.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherIncome,
+                    add_amount: net_cash_flow.result() - result.net_result(),
+                },
+            });
+        }
+        Ok(result)
+    }
+
+    fn parse_financial_cash_flow(
+        report_lines: &[ParsedLineInfo<CashFlowKeys>],
+    ) -> Result<FinancialCashFlow, ParseError<CashFlowKeys>> {
+        let mut raising_loans = ParsedLineInfoCollector::new(CashFlowKeys::RaisingLoans);
+        let mut bonds_issuing = ParsedLineInfoCollector::new(CashFlowKeys::BondsIssuing);
+        let mut shares_issuing = ParsedLineInfoCollector::new(CashFlowKeys::SharesIssuing);
+        let mut other_income = ParsedLineInfoCollector::new(CashFlowKeys::OtherIncome);
+
+        let mut returning_loans = ParsedLineInfoCollector::new(CashFlowKeys::ReturningLoans);
+        let mut bonds_redemption = ParsedLineInfoCollector::new(CashFlowKeys::BondsRedemption);
+        let mut shares_buyback = ParsedLineInfoCollector::new(CashFlowKeys::SharesBuyback);
+        let mut dividents = ParsedLineInfoCollector::new(CashFlowKeys::Dividents);
+        let mut other_expenses = ParsedLineInfoCollector::new(CashFlowKeys::OtherExpenses);
+
+        let mut total_income = ParsedLineInfoCollector::new(CashFlowKeys::TotalIncome);
+        let mut total_expenses = ParsedLineInfoCollector::new(CashFlowKeys::TotalExpenses);
+        let mut net_cash_flow = ParsedLineInfoCollector::new(CashFlowKeys::NetFinancialCashFlow);
+
+        parse_common_helper(
+            report_lines,
+            &mut [
+                &mut raising_loans,
+                &mut bonds_issuing,
+                &mut shares_issuing,
+                &mut other_income,
+                &mut returning_loans,
+                &mut bonds_redemption,
+                &mut shares_buyback,
+                &mut dividents,
+                &mut other_expenses,
+                &mut total_income,
+                &mut total_expenses,
+                &mut net_cash_flow,
+            ],
+        )?;
+        let in_flow = FinancialInFlow::new(
+            raising_loans.result(),
+            bonds_issuing.result(),
+            shares_issuing.result(),
+            other_income.result(),
+        );
+        let out_flow = FinancialOutFlow::new(
+            returning_loans.result(),
+            bonds_redemption.result(),
+            shares_buyback.result(),
+            dividents.result(),
+            other_expenses.result(),
+        );
+        log::info!("Unchecked financial in_flow {:?}", in_flow);
+        if in_flow.net_result() != total_income.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in financial incoming cf. Calculated {} provided in report {}",
+                    in_flow.net_result(),
+                    total_income.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherIncome,
+                    add_amount: total_income.result() - in_flow.net_result(),
+                },
+            });
+        }
+        log::info!("Unchecked financial out_flow {:?}", out_flow);
+        if out_flow.net_result() != total_expenses.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in financial expenses cf. Calculated {} provided in report {}",
+                    out_flow.net_result(),
+                    total_expenses.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherExpenses,
+                    add_amount: total_expenses.result() - out_flow.net_result(),
+                },
+            });
+        }
+
+        let result = FinancialCashFlow::new(in_flow, out_flow);
+        if result.net_result() != net_cash_flow.result() {
+            return Err(ParseError::SumMismatch {
+                message: format!(
+                    "CF mismatch in financial total cf. Calculated {} provided in report {}",
+                    result.net_result(),
+                    net_cash_flow.result(),
+                ),
+                fix: FixInfo::<CashFlowKeys> {
+                    lines_range: 0..0, // unused
+                    line_key_to_modify: CashFlowKeys::OtherIncome,
+                    add_amount: net_cash_flow.result() - result.net_result(),
+                },
+            });
+        }
+        Ok(result)
+    }
+
     pub fn parse_income_report_interactive(
         &self,
         raw_report: &RawReport<IncomeKeys>,
@@ -475,6 +800,31 @@ impl ReportParser {
                 standard: raw_report.standard,
             };
             match self.parse_income_report_batch(&edited_report) {
+                Ok(_) => {
+                    return Ok(Some(edited_report));
+                }
+                Err(err) => {
+                    editor.set_error_line(err.to_string());
+                }
+            }
+        }
+    }
+
+    pub fn parse_cash_flow_report_interactive(
+        &self,
+        raw_report: &RawReport<CashFlowKeys>,
+    ) -> Result<Option<RawReport<CashFlowKeys>>> {
+        let mut editor = InteractiveLinesEditor::new(raw_report.lines.clone());
+        loop {
+            let edit_result = editor.run_editor()?;
+            if edit_result == EditResult::CloseWithoutSaving {
+                return Ok(None);
+            }
+            let edited_report = RawReport::<CashFlowKeys> {
+                lines: editor.result_lines().clone(),
+                standard: raw_report.standard,
+            };
+            match self.parse_cash_flow_report_batch(&edited_report) {
                 Ok(_) => {
                     return Ok(Some(edited_report));
                 }

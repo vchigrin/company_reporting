@@ -1,4 +1,5 @@
 use super::balance_report;
+use super::cash_flow_report;
 use super::income_report;
 use super::metrics_report;
 use super::{Metric, MetricInput, RowDescriptor, ValueGetter};
@@ -23,6 +24,7 @@ use strum_macros::{EnumString, IntoStaticStr, VariantArray};
 pub enum DisplayedReportType {
     Balance,
     Income,
+    CashFlow,
     Metrics,
 }
 
@@ -314,6 +316,7 @@ pub fn process_detailed_company_report(
     let row_descriptors: &'static [RowDescriptor] = match args.displayed_report_type {
         DisplayedReportType::Balance => &balance_report::ROWS,
         DisplayedReportType::Income => &income_report::ROWS,
+        DisplayedReportType::CashFlow => &cash_flow_report::ROWS,
         DisplayedReportType::Metrics => &metrics_report::ROWS,
     };
     let table = CompanyReportTable::new(company, row_descriptors, args.displayed_report_type)?;

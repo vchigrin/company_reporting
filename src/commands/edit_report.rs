@@ -58,6 +58,18 @@ pub fn process_edit_report(args: &EditReportArgs, db: &mut storage::Storage) -> 
                 return Ok(());
             }
         }
+        ReportType::CashFlow => {
+            let existing = company_report
+                .cash_flow
+                .take()
+                .ok_or_else(|| eyre!("No cash_flow report for this period to edit"))?;
+            if let Some(edited) = parser.parse_cash_flow_report_interactive(&existing)? {
+                company_report.cash_flow = Some(edited);
+            } else {
+                // Used cancelled editing.
+                return Ok(());
+            }
+        }
     }
     db.save_company(&company)?;
     Ok(())

@@ -60,7 +60,21 @@ fn classify_income_lines(
         money_multiplier,
         Rc::new(lines_classifier::MapKeyClasifier::new(dict)),
     );
-    // RSBU mode does not any special quicks for income report.
+    // RSBU mode does not have any special quicks for income report.
+    classifier.classify_lines(page_lines, false)
+}
+
+fn classify_cash_flow_lines(
+    db: &storage::Storage,
+    page_lines: &[String],
+    money_multiplier: model::MoneyMultiplier,
+) -> Result<Vec<model::ParsedLineInfo<model::CashFlowKeys>>> {
+    let dict = db.load_keys_dict::<model::CashFlowKeys>(model::ReportType::CashFlow)?;
+    let classifier = report_parser::lines_classifier::LinesClassifier::new(
+        money_multiplier,
+        Rc::new(lines_classifier::MapKeyClasifier::new(dict)),
+    );
+    // RSBU mode does not have any special quicks for cash flow report.
     classifier.classify_lines(page_lines, false)
 }
 
@@ -82,6 +96,11 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
         model::ReportType::Income => {
             if let Some(existing) = &company_report.income {
                 return Err(eyre!("Income already present; Value {:?}", existing));
+            }
+        }
+        model::ReportType::CashFlow => {
+            if let Some(existing) = &company_report.cash_flow {
+                return Err(eyre!("CashFlow already present; Value {:?}", existing));
             }
         }
     }
@@ -148,6 +167,32 @@ pub fn process_parse_report(args: &ParseReportArgs, db: &mut storage::Storage) -
                 raw_report
             };
             company_report.income = Some(final_report);
+        }
+        model::ReportType::CashFlow => {
+            let parsed_lines = classify_cash_flow_lines(db, &page_lines, args.money_multiplier)?;
+            let raw_report = model::RawReport::<model::CashFlowKeys> {
+                lines: parsed_lines,
+                standard: if args.rsbu {
+                    model::ReportStandard::Rsbu
+                } else {
+                    model::ReportStandard::Msfo
+                },
+            };
+            let final_report = if args.interactive {
+                match parser.parse_cash_flow_report_interactive(&raw_report)? {
+                    Some(r) => r,
+                    None => {
+                        // User cancelled
+                        return Ok(());
+                    }
+                }
+            } else {
+                // Verify that lines are correct and CashFlow report can be constructed
+                // from this lines set.
+                parser.parse_cash_flow_report_batch(&raw_report)?;
+                raw_report
+            };
+            company_report.cash_flow = Some(final_report);
         }
     }
     db.save_company(&company)?;

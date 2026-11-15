@@ -87,8 +87,54 @@ pub enum IncomeKeys {
     NetProfit,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, VariantArray, IntoStaticStr)]
+pub enum CashFlowKeys {
+    // Поступления от продаж
+    SalesIncome,
+    // Проценты полученные
+    PercentIncome,
+    // Оплата поставщикам
+    SupplierExpenses,
+    // Оплата труда
+    SalariesExpenses,
+    // Проценты уплаченные
+    PercentExpenses,
+    // Налоги
+    TaxExpenses,
+    // Продажа внеоборотных активов
+    CapitalSales,
+    // Приобретение внеоборотных активов
+    CapitalExpenses,
+    // Получение кредитов и займов
+    RaisingLoans,
+    // Эмиссия облигаций
+    BondsIssuing,
+    // Эмиссия акций
+    SharesIssuing,
+    // Возврат кредитов и займов
+    ReturningLoans,
+    // Погашение облигаций
+    BondsRedemption,
+    // Выкуп акций
+    SharesBuyback,
+    // Дивиденды
+    Dividents,
+    // Прочие доходы
+    #[default]
+    OtherIncome,
+    // Прочие расходы
+    OtherExpenses,
+    TotalIncome,
+    TotalExpenses,
+    NetOperationalCashFlow,
+    NetInvestmentCashFlow,
+    NetFinancialCashFlow,
+    NetTotalCashFlow,
+}
+
 impl GenericKeys for BalanceKeys {}
 impl GenericKeys for IncomeKeys {}
+impl GenericKeys for CashFlowKeys {}
 
 #[derive(Debug, Clone)]
 pub struct ParsedLineInfo<Keys: GenericKeys> {

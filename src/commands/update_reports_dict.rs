@@ -39,6 +39,7 @@ fn update_dict<Keys: GenericKeys>(
             }
         }
     }
+    log::info!("Overwrite dict for {:?} with {:?}", report_type, dict);
     db.overwrite_keys_dict(report_type, &dict)
 }
 
@@ -61,6 +62,13 @@ pub fn process_update_reports_dict(
         db,
         &companies,
         |r| r.income.as_ref().map(|b| &b.lines),
+        force,
+    )?;
+    update_dict::<model::CashFlowKeys>(
+        model::ReportType::CashFlow,
+        db,
+        &companies,
+        |r| r.cash_flow.as_ref().map(|b| &b.lines),
         force,
     )?;
 

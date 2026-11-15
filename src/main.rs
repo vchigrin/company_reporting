@@ -90,11 +90,13 @@ fn process_get_company(db: &mut storage::Storage, args: &GetCompanyArgs) -> Resu
         let report = &company.raw_reports[period];
         let has_balance = report.balance.is_some();
         let has_income = report.income.is_some();
+        let has_cash_flow = report.cash_flow.is_some();
         println!(
-            "    {}; Has balance? {}; Has income report? {}",
+            "    {}; Has balance? {}; Has income report? {}; Has cash flow report? {}",
             period.short_string(),
             has_balance,
-            has_income
+            has_income,
+            has_cash_flow
         );
     }
     println!("Known rating agency conclusions:");

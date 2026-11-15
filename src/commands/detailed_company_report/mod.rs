@@ -2,6 +2,7 @@ use crate::model::{Money, Report};
 use std::fmt;
 
 mod balance_report;
+mod cash_flow_report;
 mod command;
 mod income_report;
 mod metrics_report;

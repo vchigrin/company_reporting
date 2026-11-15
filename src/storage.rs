@@ -1,5 +1,5 @@
 use crate::model;
-use crate::model::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
+use crate::model::{BalanceKeys, CashFlowKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 use eyre::Result;
 use rusqlite::{Connection, Transaction, named_params};
 use std::collections::HashMap;
@@ -150,6 +150,16 @@ impl Storage {
                     model::ReportType::Income,
                 )?;
                 Self::overwrite_report_lines::<IncomeKeys>(&tx, report_id, &report.lines)?;
+            }
+            if let Some(report) = &report_set.cash_flow {
+                let report_id = Self::insert_and_get_report_id(
+                    &tx,
+                    company_id,
+                    key,
+                    report.standard,
+                    model::ReportType::CashFlow,
+                )?;
+                Self::overwrite_report_lines::<CashFlowKeys>(&tx, report_id, &report.lines)?;
             }
         }
         Self::overwrite_ra_conclusions(&tx, company_id, &company.ra_conclusions)?;
@@ -336,6 +346,7 @@ impl Storage {
                 let mut new_report = model::ReportSet {
                     balance: None,
                     income: None,
+                    cash_flow: None,
                 };
                 self.fill_raw_report(&mut new_report, report_type, report_standard, report_id)?;
                 result.insert(report_period, new_report);
@@ -364,6 +375,14 @@ impl Storage {
                 assert!(r.income.is_none());
                 let lines = self.load_report_lines::<IncomeKeys>(report_id)?;
                 r.income = Some(model::RawReport::<IncomeKeys> {
+                    lines,
+                    standard: report_standard,
+                });
+            }
+            model::ReportType::CashFlow => {
+                assert!(r.cash_flow.is_none());
+                let lines = self.load_report_lines::<CashFlowKeys>(report_id)?;
+                r.cash_flow = Some(model::RawReport::<CashFlowKeys> {
                     lines,
                     standard: report_standard,
                 });
@@ -750,6 +769,10 @@ mod tests {
                         lines: income,
                         standard: model::ReportStandard::Rsbu,
                     }),
+                    cash_flow: Some(model::RawReport::<CashFlowKeys> {
+                        lines: vec![],
+                        standard: model::ReportStandard::Rsbu,
+                    }),
                 },
             );
         }
@@ -978,6 +1001,7 @@ mod tests {
                     standard: model::ReportStandard::Rsbu,
                 }),
                 income: None,
+                cash_flow: None,
             }
         }
 

@@ -1,4 +1,5 @@
 pub mod balance_report;
+pub mod cash_flow_report;
 mod company;
 pub mod income_report;
 mod keys;
@@ -8,7 +9,7 @@ mod period;
 mod ra_conclusion;
 
 pub use company::{CompanyInfo, RawReport, Report, ReportSet, ReportStandard};
-pub use keys::{BalanceKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
+pub use keys::{BalanceKeys, CashFlowKeys, GenericKeys, IncomeKeys, ParsedLineInfo};
 pub use money::Money;
 pub use note::Note;
 pub use period::Period;
@@ -19,6 +20,7 @@ use strum_macros::{EnumString, IntoStaticStr, VariantArray};
 pub enum ReportType {
     Balance,
     Income,
+    CashFlow,
 }
 
 #[derive(Debug, Clone, Copy, EnumString, IntoStaticStr, VariantArray)]
