@@ -11,6 +11,7 @@ use ratatui::{
 };
 
 use super::centered_popup_rect;
+use super::help_dialog::{HelpDialog, HelpItem, KeyHandlingResult};
 use super::line_edit_dialog::{EditDecision, LineEditDialog};
 
 pub trait IsMarkedTrait {
@@ -62,6 +63,7 @@ pub struct InteractiveLinesEditor<Keys: GenericKeys + IsMarkedTrait> {
 enum Mode<Keys: GenericKeys> {
     Navigate,
     Editing(Box<LineEditDialog<Keys>>),
+    Help(HelpDialog),
 }
 
 #[derive(PartialEq)]
@@ -139,7 +141,65 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
                 self.handle_editing_key(key, editor)?;
                 Ok(None)
             }
+            Mode::Help(dialog) => self.handle_help_key(key, dialog),
         }
+    }
+
+    fn handle_help_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        dialog: HelpDialog,
+    ) -> Result<Option<EditResult>> {
+        match dialog.handle_key(key) {
+            KeyHandlingResult::Close => {}
+            KeyHandlingResult::Continue => self.mode = Mode::Help(dialog),
+        }
+        Ok(None)
+    }
+
+    fn help_dialog() -> HelpDialog {
+        HelpDialog::new(vec![
+            HelpItem {
+                key: "Up/Down".to_owned(),
+                description: "Move selection".to_owned(),
+            },
+            HelpItem {
+                key: "i".to_owned(),
+                description: "Insert line".to_owned(),
+            },
+            HelpItem {
+                key: "e".to_owned(),
+                description: "Edit line".to_owned(),
+            },
+            HelpItem {
+                key: "d".to_owned(),
+                description: "Delete line".to_owned(),
+            },
+            HelpItem {
+                key: "u".to_owned(),
+                description: "Restore deleted line".to_owned(),
+            },
+            HelpItem {
+                key: "w".to_owned(),
+                description: "Move line up".to_owned(),
+            },
+            HelpItem {
+                key: "s".to_owned(),
+                description: "Move line down".to_owned(),
+            },
+            HelpItem {
+                key: "Enter".to_owned(),
+                description: "Save and exit".to_owned(),
+            },
+            HelpItem {
+                key: "q/Esc".to_owned(),
+                description: "Close without saving".to_owned(),
+            },
+            HelpItem {
+                key: "?".to_owned(),
+                description: "Show this help".to_owned(),
+            },
+        ])
     }
 
     fn handle_fix_info_key(
@@ -229,6 +289,11 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
                 }
                 Ok(None)
             }
+            KeyCode::Char('?') => {
+                self.mode = Mode::Help(Self::help_dialog());
+                self.status = None;
+                Ok(None)
+            }
             KeyCode::Char('i') => {
                 self.mode = Mode::Editing(Box::new(LineEditDialog::new_insert()));
                 self.status = None;
@@ -316,9 +381,16 @@ impl<Keys: GenericKeys + IsMarkedTrait> InteractiveLinesEditor<Keys> {
         self.list_state.select(self.selected());
         let list = self.list_widget();
         f.render_stateful_widget(list, f.area(), &mut self.list_state);
-        if let Mode::Editing(editor) = &mut self.mode {
-            editor.draw_editor_popup(f);
-        } else {
+        let mut show_status = true;
+        match &mut self.mode {
+            Mode::Editing(editor) => {
+                editor.draw_editor_popup(f);
+                show_status = false;
+            }
+            Mode::Help(dialog) => dialog.draw(f),
+            Mode::Navigate => {}
+        }
+        if show_status {
             self.draw_status(f);
         }
     }
