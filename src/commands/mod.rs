@@ -1,19 +1,22 @@
 mod add_note;
 mod add_ra_conclusion;
+mod add_related_url;
 mod delete_note;
 mod detailed_company_report;
 mod edit_note;
 mod edit_report;
+mod open_related_urls;
 mod parse_report;
 mod update_reports_dict;
 
 pub use add_note::{AddNoteArgs, process_add_note};
 pub use add_ra_conclusion::{AddRAConclusionArgs, process_add_ra_conclusion};
+pub use add_related_url::{AddRelatedUrlArgs, process_add_related_url};
 pub use delete_note::{DeleteNoteArgs, process_delete_note};
 pub use detailed_company_report::{DetailedReportArgs, process_detailed_company_report};
 pub use edit_note::{EditNoteArgs, process_edit_note};
-pub use edit_report::EditReportArgs;
-pub use edit_report::process_edit_report;
+pub use edit_report::{EditReportArgs, process_edit_report};
+pub use open_related_urls::{OpenRelatedUrlsArgs, process_open_related_urls};
 pub use parse_report::ParseReportArgs;
 pub use parse_report::process_parse_report;
 pub use update_reports_dict::{UpdateReportsDictArgs, process_update_reports_dict};

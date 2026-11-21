@@ -29,6 +29,20 @@ pub struct ReportSet {
     pub cash_flow: Option<RawReport<CashFlowKeys>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr)]
+pub enum UrlKind {
+    RaRelease,
+    Crki,
+    SmartLab,
+    CorporateSite,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedUrl {
+    pub url: String,
+    pub url_kind: UrlKind,
+}
+
 #[derive(Debug)]
 pub struct CompanyInfo {
     pub name: String,
@@ -36,6 +50,7 @@ pub struct CompanyInfo {
     pub raw_reports: HashMap<Period, ReportSet>,
     pub ra_conclusions: Vec<RAConclusion>,
     pub notes: Vec<Note>,
+    pub related_urls: Vec<RelatedUrl>,
 }
 
 #[derive(Clone)]

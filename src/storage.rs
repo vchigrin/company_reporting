@@ -17,6 +17,7 @@ const REPORT_LINES: &str = "report_lines";
 const REPORT_KEYS_DICT: &str = "report_keys_dict";
 const RA_CONCLUSIONS: &str = "ra_conclusions";
 const NOTES: &str = "notes";
+const RELATED_URLS: &str = "related_urls";
 
 impl Storage {
     pub fn new_with_file(path: &Path) -> Result<Self> {
@@ -124,6 +125,20 @@ impl Storage {
                 [],
             )?;
         }
+        if !self.connection.table_exists(None, RELATED_URLS)? {
+            self.connection.execute(
+                &format!(
+                    "CREATE TABLE {}(
+                   url_id INTEGER PRIMARY KEY,
+                   company_id INTEGER NOT NULL,
+                   url TEXT NOT NULL,
+                   url_kind TEXT NOT NULL
+                );",
+                    RELATED_URLS
+                ),
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -164,6 +179,7 @@ impl Storage {
         }
         Self::overwrite_ra_conclusions(&tx, company_id, &company.ra_conclusions)?;
         Self::overwrite_notes(&tx, company_id, &company.notes)?;
+        Self::overwrite_related_urls(&tx, company_id, &company.related_urls)?;
         tx.commit()?;
         Ok(())
     }
@@ -180,6 +196,7 @@ impl Storage {
             raw_reports: self.load_report_sets(company_id)?,
             ra_conclusions: self.load_ra_conclusions(company_id)?,
             notes: self.load_notes(company_id)?,
+            related_urls: self.load_related_urls(company_id)?,
         })
     }
 
@@ -195,6 +212,7 @@ impl Storage {
             raw_reports: self.load_report_sets(company_id)?,
             ra_conclusions: self.load_ra_conclusions(company_id)?,
             notes: self.load_notes(company_id)?,
+            related_urls: self.load_related_urls(company_id)?,
         })
     }
 
@@ -277,6 +295,7 @@ impl Storage {
                 raw_reports: self.load_report_sets(company_id)?,
                 ra_conclusions: self.load_ra_conclusions(company_id)?,
                 notes: self.load_notes(company_id)?,
+                related_urls: self.load_related_urls(company_id)?,
             });
         }
         Ok(result)
@@ -623,6 +642,64 @@ impl Storage {
         result.sort_by_key(|note| note.date);
         Ok(result)
     }
+
+    fn overwrite_related_urls<'a>(
+        tx: &Transaction<'a>,
+        company_id: i64,
+        urls: &[model::RelatedUrl],
+    ) -> Result<()> {
+        tx.execute(
+            &format!(
+                "DELETE FROM {} WHERE company_id = $company_id",
+                RELATED_URLS
+            ),
+            named_params! {"$company_id": company_id},
+        )?;
+        let mut insert_stmt = tx
+            .prepare(&format!(
+                "INSERT INTO {} (company_id, url, url_kind) VALUES(
+                   $company_id,
+                   $url,
+                   $url_kind
+                )",
+                RELATED_URLS
+            ))
+            .unwrap();
+        for related_url in urls {
+            let url_kind: &'static str = related_url.url_kind.into();
+            insert_stmt.execute(named_params! {
+               "$company_id": company_id,
+               "$url": related_url.url,
+               "$url_kind": url_kind,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn load_related_urls(&self, company_id: i64) -> Result<Vec<model::RelatedUrl>> {
+        let mut stmt = self
+            .connection
+            .prepare(&format!(
+                "SELECT url, url_kind FROM {}
+                 WHERE company_id = $company_id
+                 ORDER BY url_id",
+                RELATED_URLS
+            ))
+            .unwrap();
+        let mut rows = stmt
+            .query(named_params! {"$company_id": company_id})
+            .unwrap();
+        let mut result = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let url = row.get::<usize, String>(0)?;
+            let url_kind_str = row.get::<usize, String>(1)?;
+            result.push(model::RelatedUrl {
+                url,
+                url_kind: model::UrlKind::from_str(&url_kind_str)?,
+            });
+        }
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -706,6 +783,7 @@ mod tests {
                 raw_reports: HashMap::default(),
                 ra_conclusions: Vec::new(),
                 notes: Vec::new(),
+                related_urls: Vec::new(),
             };
             storage
                 .save_company(&company)
@@ -782,6 +860,16 @@ mod tests {
             inn: "7701234567".to_owned(),
             raw_reports,
             // Deliberately unsorted: loading from DB must sort by date.
+            related_urls: vec![
+                model::RelatedUrl {
+                    url: "https://ra.example.com/release".to_owned(),
+                    url_kind: model::UrlKind::RaRelease,
+                },
+                model::RelatedUrl {
+                    url: "https://cbr.ru/ckri".to_owned(),
+                    url_kind: model::UrlKind::Crki,
+                },
+            ],
             ra_conclusions: vec![
                 model::RAConclusion {
                     date: date!(2025 - 06 - 10),
@@ -845,6 +933,7 @@ mod tests {
             note.id = (index + 1) as i64;
         }
         assert_eq!(restored.notes, expected_notes);
+        assert_eq!(restored.related_urls, original.related_urls);
     }
 
     fn compare_report_set(restored: &model::ReportSet, expected: &model::ReportSet) {
@@ -892,6 +981,7 @@ mod tests {
                 forecast: model::RatingForecast::Positive,
             }],
             notes: Vec::new(),
+            related_urls: Vec::new(),
         };
         storage.save_company(&company).expect("Failed save company");
 
@@ -943,6 +1033,7 @@ mod tests {
                 date: date!(2024 - 03 - 01),
                 text: "Первый черновик".to_owned(),
             }],
+            related_urls: Vec::new(),
         };
         storage.save_company(&company).expect("Failed save company");
 
@@ -986,6 +1077,43 @@ mod tests {
     }
 
     #[test]
+    fn related_urls_overwrite() {
+        let mut storage = Storage::new_in_memory().expect("Failed create DB");
+        let mut company = model::CompanyInfo {
+            name: "ООО Пример".to_owned(),
+            inn: "7705566778".to_owned(),
+            raw_reports: HashMap::new(),
+            ra_conclusions: Vec::new(),
+            notes: Vec::new(),
+            related_urls: vec![model::RelatedUrl {
+                url: "https://ra.example.com/release".to_owned(),
+                url_kind: model::UrlKind::RaRelease,
+            }],
+        };
+        storage.save_company(&company).expect("Failed save company");
+
+        // Replacing URLs must drop old rows and store only new ones.
+        company.related_urls = vec![
+            model::RelatedUrl {
+                url: "https://smart-lab.ru/company".to_owned(),
+                url_kind: model::UrlKind::SmartLab,
+            },
+            model::RelatedUrl {
+                url: "https://company.example.com".to_owned(),
+                url_kind: model::UrlKind::CorporateSite,
+            },
+        ];
+        storage
+            .save_company(&company)
+            .expect("Failed overwrite company");
+
+        let restored = storage
+            .get_company_by_inn(&company.inn)
+            .expect("Failed query company");
+        assert_eq!(restored.related_urls, company.related_urls);
+    }
+
+    #[test]
     fn overwrite_reports() {
         fn balance_line(key: BalanceKeys, roubles: i64, line: &str) -> ParsedLineInfo<BalanceKeys> {
             ParsedLineInfo {
@@ -1011,6 +1139,7 @@ mod tests {
             raw_reports: HashMap::new(),
             ra_conclusions: Vec::new(),
             notes: Vec::new(),
+            related_urls: Vec::new(),
         };
         macro_rules! insert_report {
             ($period:expr, $lines:expr) => {

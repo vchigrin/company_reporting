@@ -39,7 +39,9 @@ enum Command {
     EditReport(commands::EditReportArgs),
     ParseReport(commands::ParseReportArgs),
     AddRAConclusion(commands::AddRAConclusionArgs),
+    AddRelatedUrl(commands::AddRelatedUrlArgs),
     AddNote(commands::AddNoteArgs),
+    OpenRelatedUrls(commands::OpenRelatedUrlsArgs),
     DeleteNote(commands::DeleteNoteArgs),
     DetailedCompanyReport(commands::DetailedReportArgs),
     EditNote(commands::EditNoteArgs),
@@ -68,6 +70,7 @@ fn process_add_company(db: &mut storage::Storage, args: &AddCompanyArgs) -> Resu
         raw_reports: HashMap::default(),
         ra_conclusions: Vec::new(),
         notes: Vec::new(),
+        related_urls: Vec::new(),
     };
     db.save_company(&company)?;
     println!("Saved company {:?}", company);
@@ -115,6 +118,11 @@ fn process_get_company(db: &mut storage::Storage, args: &GetCompanyArgs) -> Resu
         println!("{}", note.text);
         println!();
     }
+    println!("Related URLs:");
+    for related_url in &company.related_urls {
+        let url_kind: &'static str = related_url.url_kind.into();
+        println!("Kind: {}; Url: {}", url_kind, related_url.url);
+    }
     Ok(())
 }
 
@@ -137,7 +145,9 @@ fn process_command(command: &Command) -> Result<()> {
         Command::EditReport(args) => commands::process_edit_report(args, &mut db),
         Command::ParseReport(args) => commands::process_parse_report(args, &mut db),
         Command::AddRAConclusion(args) => commands::process_add_ra_conclusion(args, &mut db),
+        Command::AddRelatedUrl(args) => commands::process_add_related_url(args, &mut db),
         Command::AddNote(args) => commands::process_add_note(args, &mut db),
+        Command::OpenRelatedUrls(args) => commands::process_open_related_urls(args, &mut db),
         Command::DeleteNote(args) => commands::process_delete_note(args, &mut db),
         Command::DetailedCompanyReport(args) => {
             commands::process_detailed_company_report(&mut db, args)
