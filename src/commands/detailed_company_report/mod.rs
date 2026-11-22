@@ -1,4 +1,4 @@
-use crate::model::{Money, Report};
+use crate::model::{Money, Period, Report};
 use std::fmt;
 
 mod balance_report;
@@ -61,6 +61,7 @@ struct MetricInput {
     // If no data for last twelve month present, then None.
     reports_ltm: Option<Vec<Report>>,
     last_report: Report,
+    period: Period,
 }
 
 type MetricGetter = fn(&MetricInput) -> Option<Metric>;

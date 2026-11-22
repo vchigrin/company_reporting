@@ -1,6 +1,8 @@
 use super::{Metric, MetricInput, MoneyGetter, RowDescriptor, ValueGetter};
 use crate::model::{Money, Report};
 
+const DAYS_IN_FINANCICAL_YEAR: f64 = 365.;
+
 fn net_debt(report: &Report) -> Money {
     let current_assets = report.balance.assets().current();
     // TODO(vchigrin): May be we should move financial assets to
@@ -170,7 +172,50 @@ fn payable_turnover_ratio(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
-pub const ROWS: [RowDescriptor; 18] = [
+fn estimated_loan_interest(metric_input: &MetricInput) -> Option<Metric> {
+    let average_loans = get_averate_or_last(metric_input, |report| {
+        let liabilities = report.balance.liabilities();
+        liabilities.current().loans() + liabilities.long_term().loans()
+    });
+    if average_loans == Money::zero() {
+        return None;
+    }
+    let average_percent_expenses = get_averate_or_last(metric_input, |report| {
+        report.income.financial_segment().financial_expenses()
+    });
+    log::info!(
+        "Avg loans {} prc expenses {} in {} days",
+        average_loans,
+        average_percent_expenses,
+        metric_input.period.days_count()
+    );
+
+    let percent =
+        (average_percent_expenses.in_roubles() as f64) / (average_loans.in_roubles() as f64);
+    Some(Metric::Ratio(
+        (percent * DAYS_IN_FINANCICAL_YEAR) / (metric_input.period.days_count() as f64),
+    ))
+}
+
+fn estimated_financial_asset_interest(metric_input: &MetricInput) -> Option<Metric> {
+    let average_investments = get_averate_or_last(metric_input, |report| {
+        let assets = report.balance.assets();
+        assets.current().financial_assets() + assets.non_current().financial_assets()
+    });
+    if average_investments == Money::zero() {
+        return None;
+    }
+    let average_percent_income = get_averate_or_last(metric_input, |report| {
+        report.income.financial_segment().financial_income()
+    });
+    let percent =
+        (average_percent_income.in_roubles() as f64) / (average_investments.in_roubles() as f64);
+    Some(Metric::Ratio(
+        (percent * DAYS_IN_FINANCICAL_YEAR) / (metric_input.period.days_count() as f64),
+    ))
+}
+
+pub const ROWS: [RowDescriptor; 21] = [
     RowDescriptor {
         title: "Net debt",
         value_getter: ValueGetter::Money(net_debt),
@@ -261,6 +306,21 @@ pub const ROWS: [RowDescriptor; 18] = [
     RowDescriptor {
         title: "Accounts payable",
         value_getter: ValueGetter::Metric(payable_turnover_ratio),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Est. financial interest",
+        value_getter: ValueGetter::None,
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Loans",
+        value_getter: ValueGetter::Metric(estimated_loan_interest),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "Financial assets",
+        value_getter: ValueGetter::Metric(estimated_financial_asset_interest),
         level: 2,
     },
 ];

@@ -1,5 +1,6 @@
 use eyre::{Result, eyre};
 use std::str::FromStr;
+use time::Date;
 
 // Order is important for "get-company" command, for order of
 // columns in detailed report etc.
@@ -422,6 +423,39 @@ impl Period {
                         period_type: PeriodType::Q3,
                     },
                 ]
+            }
+        }
+    }
+
+    pub fn days_count(&self) -> i64 {
+        let start_date = self.start_date();
+        let end_date = self.end_date();
+        (end_date - start_date).whole_days() + 1
+    }
+
+    pub fn start_date(&self) -> Date {
+        let start_month = match self.period_type {
+            PeriodType::Q1 | PeriodType::FirstHalf | PeriodType::Q13 | PeriodType::Full => {
+                time::Month::January
+            }
+            PeriodType::Q2 => time::Month::April,
+            PeriodType::SecondHalf | PeriodType::Q3 => time::Month::July,
+            PeriodType::Q4 => time::Month::October,
+        };
+        Date::from_calendar_date(self.year, start_month, 1).unwrap()
+    }
+
+    pub fn end_date(&self) -> Date {
+        match self.period_type {
+            PeriodType::Q1 => Date::from_calendar_date(self.year, time::Month::March, 31).unwrap(),
+            PeriodType::Q2 | PeriodType::FirstHalf => {
+                Date::from_calendar_date(self.year, time::Month::June, 30).unwrap()
+            }
+            PeriodType::Q3 | PeriodType::Q13 => {
+                Date::from_calendar_date(self.year, time::Month::September, 30).unwrap()
+            }
+            PeriodType::Q4 | PeriodType::Full | PeriodType::SecondHalf => {
+                Date::from_calendar_date(self.year, time::Month::December, 31).unwrap()
             }
         }
     }

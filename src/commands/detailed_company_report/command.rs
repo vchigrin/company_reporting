@@ -340,6 +340,7 @@ impl CompanyReportTable {
                 let metric_input = MetricInput {
                     reports_ltm: self.collect_ltm_reports(period),
                     last_report: (*cur_report).clone(),
+                    period,
                 };
                 metric_getter(&metric_input)
             }
