@@ -17,10 +17,8 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
 use std::collections::HashMap;
-use strum::VariantArray;
-use strum_macros::{EnumString, IntoStaticStr, VariantArray};
 
-#[derive(Debug, Clone, Copy, PartialEq, EnumString, IntoStaticStr, VariantArray)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DisplayedReportType {
     Balance,
     Income,
@@ -28,14 +26,23 @@ pub enum DisplayedReportType {
     Metrics,
 }
 
-impl clap::ValueEnum for DisplayedReportType {
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        let val: &'static str = self.into();
-        Some(clap::builder::PossibleValue::new(val))
+impl DisplayedReportType {
+    fn row_descriptors(self) -> &'static [RowDescriptor] {
+        match self {
+            Self::Balance => &balance_report::ROWS,
+            Self::Income => &income_report::ROWS,
+            Self::CashFlow => &cash_flow_report::ROWS,
+            Self::Metrics => &metrics_report::ROWS,
+        }
     }
 
-    fn value_variants<'a>() -> &'a [Self] {
-        Self::VARIANTS
+    fn name(self) -> &'static str {
+        match self {
+            Self::Balance => "Balance",
+            Self::Income => "Income",
+            Self::CashFlow => "Cash Flow",
+            Self::Metrics => "Metrics",
+        }
     }
 }
 
@@ -46,8 +53,6 @@ pub struct DetailedReportArgs {
     pub inn: Option<String>,
     #[arg(long)]
     pub name: Option<String>,
-    #[arg(long)]
-    pub displayed_report_type: DisplayedReportType,
 }
 
 const CLOSED_MARK: &str = "\u{25b6} "; // Arrow to right
@@ -71,14 +76,11 @@ struct CompanyReportTable {
     // TODO(vchigrin): Find a way to disable PercentFromBalance in more
     // elegant way...
     displayed_report_type: DisplayedReportType,
+    company_title: String,
 }
 
 impl CompanyReportTable {
-    fn new(
-        company: model::CompanyInfo,
-        row_descriptors: &'static [RowDescriptor],
-        displayed_report_type: DisplayedReportType,
-    ) -> Result<Self> {
+    fn new(company: model::CompanyInfo) -> Result<Self> {
         let reports = company.build_reports()?;
         let mut periods: Vec<Period> = reports.keys().copied().collect();
         periods.sort();
@@ -93,23 +95,20 @@ impl CompanyReportTable {
             ),
         );
 
+        let displayed_report_type = DisplayedReportType::Metrics;
         let mut result = Self {
             table: Table::new(Vec::<Row<'static>>::default(), column_widths)
                 .header(header)
                 .column_spacing(1)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!("{} ({})", company.name, company.inn)),
-                )
                 .column_highlight_style(Style::default().bold()),
             table_state: TableState::default(),
             value_display_mode: ValueDisplayMode::Absolute,
             reports,
-            row_descriptors,
+            row_descriptors: displayed_report_type.row_descriptors(),
             periods,
             max_expand_level: 0,
             displayed_report_type,
+            company_title: format!("{} ({})", company.name, company.inn),
         };
         result.build_rows();
         Ok(result)
@@ -140,6 +139,10 @@ impl CompanyReportTable {
                 self.max_expand_level = (self.max_expand_level + 1) % (MAX_LEVEL + 1);
                 self.build_rows();
             }
+            KeyCode::Char('b') => self.set_report_type(DisplayedReportType::Balance),
+            KeyCode::Char('c') => self.set_report_type(DisplayedReportType::CashFlow),
+            KeyCode::Char('i') => self.set_report_type(DisplayedReportType::Income),
+            KeyCode::Char('m') => self.set_report_type(DisplayedReportType::Metrics),
             KeyCode::Left => {
                 self.table_state.select_previous_column();
             }
@@ -276,6 +279,17 @@ impl CompanyReportTable {
         Row::new(cells)
     }
 
+    fn set_report_type(&mut self, report_type: DisplayedReportType) {
+        if self.displayed_report_type == report_type {
+            return;
+        }
+        self.displayed_report_type = report_type;
+        self.row_descriptors = report_type.row_descriptors();
+        self.value_display_mode = ValueDisplayMode::Absolute;
+        self.max_expand_level = 0;
+        self.build_rows();
+    }
+
     fn build_rows(&mut self) {
         let mut rows: Vec<Row> = Vec::with_capacity(self.row_descriptors.len());
         for descriptor in self.row_descriptors {
@@ -284,7 +298,12 @@ impl CompanyReportTable {
             }
             rows.push(self.build_row(descriptor));
         }
-        self.table = self.table.clone().rows(rows);
+        let block = Block::default().borders(Borders::ALL).title(format!(
+            "{} | {}",
+            self.company_title,
+            self.displayed_report_type.name()
+        ));
+        self.table = self.table.clone().block(block).rows(rows);
     }
 }
 
@@ -313,13 +332,7 @@ pub fn process_detailed_company_report(
         }
     };
 
-    let row_descriptors: &'static [RowDescriptor] = match args.displayed_report_type {
-        DisplayedReportType::Balance => &balance_report::ROWS,
-        DisplayedReportType::Income => &income_report::ROWS,
-        DisplayedReportType::CashFlow => &cash_flow_report::ROWS,
-        DisplayedReportType::Metrics => &metrics_report::ROWS,
-    };
-    let table = CompanyReportTable::new(company, row_descriptors, args.displayed_report_type)?;
+    let table = CompanyReportTable::new(company)?;
     let mut terminal = ratatui::init();
     let result = run_report_viewer(&mut terminal, table);
     ratatui::restore();
