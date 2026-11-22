@@ -269,7 +269,7 @@ pub const ROWS: [RowDescriptor; 21] = [
         level: 0,
     },
     RowDescriptor {
-        title: "Profit margin metrics",
+        title: "Rentability metrics",
         value_getter: ValueGetter::None,
         level: 0,
     },
