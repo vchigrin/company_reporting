@@ -7,14 +7,15 @@ use crate::model;
 use crate::model::balance_report::BalanceReport;
 use crate::model::{Period, Report};
 use crate::storage;
+use crate::ui::help_dialog::{HelpDialog, HelpItem, KeyHandlingResult};
 use clap::{ArgGroup, Args};
 use crossterm::event::{KeyCode, KeyEvent};
 use eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
-    layout::Constraint,
+    layout::{Constraint, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
 };
 use std::collections::HashMap;
 
@@ -65,6 +66,11 @@ enum ValueDisplayMode {
     PercentFromBalance,
 }
 
+enum Mode {
+    Normal,
+    Help(HelpDialog),
+}
+
 struct CompanyReportTable {
     table: Table<'static>,
     table_state: TableState,
@@ -77,6 +83,7 @@ struct CompanyReportTable {
     // elegant way...
     displayed_report_type: DisplayedReportType,
     company_title: String,
+    mode: Mode,
 }
 
 impl CompanyReportTable {
@@ -109,18 +116,90 @@ impl CompanyReportTable {
             max_expand_level: 0,
             displayed_report_type,
             company_title: format!("{} ({})", company.name, company.inn),
+            mode: Mode::Normal,
         };
         result.build_rows();
         Ok(result)
     }
 
     fn draw(&mut self, f: &mut Frame<'_>) {
-        f.render_stateful_widget(&self.table, f.area(), &mut self.table_state);
+        let [table_area, status_area] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(f.area());
+        f.render_stateful_widget(&self.table, table_area, &mut self.table_state);
+        self.draw_status(f, status_area);
+        if let Mode::Help(dialog) = &self.mode {
+            dialog.draw(f);
+        }
+    }
+
+    fn draw_status(&self, f: &mut Frame<'_>, area: Rect) {
+        let status =
+            Paragraph::new("?: help  q/Esc: quit").style(Style::default().fg(Color::Yellow));
+        f.render_widget(status, area);
+    }
+
+    fn help_dialog() -> HelpDialog {
+        HelpDialog::new(vec![
+            HelpItem {
+                key: "b".to_owned(),
+                description: "Show balance report".to_owned(),
+            },
+            HelpItem {
+                key: "c".to_owned(),
+                description: "Show cash flow report".to_owned(),
+            },
+            HelpItem {
+                key: "i".to_owned(),
+                description: "Show income report".to_owned(),
+            },
+            HelpItem {
+                key: "m".to_owned(),
+                description: "Show metrics report".to_owned(),
+            },
+            HelpItem {
+                key: "a".to_owned(),
+                description: "Show absolute values".to_owned(),
+            },
+            HelpItem {
+                key: "h".to_owned(),
+                description: "Show percent change to previous period".to_owned(),
+            },
+            HelpItem {
+                key: "v".to_owned(),
+                description: "Show percent from balance (balance report only)".to_owned(),
+            },
+            HelpItem {
+                key: "e".to_owned(),
+                description: "Cycle rows expand level".to_owned(),
+            },
+            HelpItem {
+                key: "Left/Right".to_owned(),
+                description: "Select previous/next column".to_owned(),
+            },
+            HelpItem {
+                key: "?".to_owned(),
+                description: "Show this help".to_owned(),
+            },
+            HelpItem {
+                key: "q/Esc".to_owned(),
+                description: "Quit".to_owned(),
+            },
+        ])
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if let Mode::Help(dialog) = &self.mode {
+            if dialog.handle_key(key) == KeyHandlingResult::Close {
+                self.mode = Mode::Normal;
+            }
+            return false;
+        }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => return true,
+            KeyCode::Char('?') => {
+                self.mode = Mode::Help(Self::help_dialog());
+                return false;
+            }
             KeyCode::Char('h') => {
                 self.value_display_mode = ValueDisplayMode::PercentToPrevious;
                 self.build_rows();
