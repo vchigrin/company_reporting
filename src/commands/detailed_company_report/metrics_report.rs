@@ -83,6 +83,14 @@ fn debt_to_equity_ratio(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
+fn equity_to_assets_ratio(metric_input: &MetricInput) -> Option<Metric> {
+    let last_balance = &metric_input.last_report.balance;
+    let assets = last_balance.assets().total();
+    let equity = last_balance.equity().total();
+    let result = (equity.in_roubles() as f64) / (assets.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
 fn get_averate_or_last(metric_input: &MetricInput, getter: MoneyGetter) -> Money {
     if let Some(ltm_reports) = &metric_input.reports_ltm
         && ltm_reports.len() >= 2
@@ -162,7 +170,7 @@ fn payable_turnover_ratio(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
-pub const ROWS: [RowDescriptor; 17] = [
+pub const ROWS: [RowDescriptor; 18] = [
     RowDescriptor {
         title: "Net debt",
         value_getter: ValueGetter::Money(net_debt),
@@ -208,6 +216,11 @@ pub const ROWS: [RowDescriptor; 17] = [
     RowDescriptor {
         title: "Debt/Equitiy (>2 - r, >1.5 - y)",
         value_getter: ValueGetter::Metric(debt_to_equity_ratio),
+        level: 0,
+    },
+    RowDescriptor {
+        title: "Equitiy/Assets (>0.2 - good)",
+        value_getter: ValueGetter::Metric(equity_to_assets_ratio),
         level: 0,
     },
     RowDescriptor {
