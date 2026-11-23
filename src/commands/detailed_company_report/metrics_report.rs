@@ -113,6 +113,25 @@ fn roa_operational_profit(metric_input: &MetricInput) -> Option<Metric> {
     Some(Metric::Ratio(result))
 }
 
+fn ro_borrowed_cap_operational_profit(metric_input: &MetricInput) -> Option<Metric> {
+    let average_assets =
+        get_averate_or_last(metric_input, |report| report.balance.assets().total());
+    let average_loans = get_averate_or_last(metric_input, |report| {
+        let liabilities = report.balance.liabilities();
+        liabilities.long_term().loans() + liabilities.current().loans()
+    });
+    // Assume all assets, financed by equity and loans without interest are
+    // working with "0% rentability". And all profit is backed by those assets,
+    // that company acquired on interest-borrowed money. Find how much operational
+    // profit they guarantee. If it less then average interest on borrowed money,
+    // then things going rather bad...
+    let average_borrowed_backed_assets = average_assets - average_loans;
+    let operational_profit = metric_input.last_report.income.operational_profit();
+    let result = (operational_profit.in_roubles() as f64)
+        / (average_borrowed_backed_assets.in_roubles() as f64);
+    Some(Metric::Ratio(result))
+}
+
 fn roa_net_profit(metric_input: &MetricInput) -> Option<Metric> {
     let average_assets =
         get_averate_or_last(metric_input, |report| report.balance.assets().total());
@@ -215,7 +234,7 @@ fn estimated_financial_asset_interest(metric_input: &MetricInput) -> Option<Metr
     ))
 }
 
-pub const ROWS: [RowDescriptor; 21] = [
+pub const ROWS: [RowDescriptor; 22] = [
     RowDescriptor {
         title: "Net debt",
         value_getter: ValueGetter::Money(net_debt),
@@ -276,6 +295,11 @@ pub const ROWS: [RowDescriptor; 21] = [
     RowDescriptor {
         title: "ROA (operational profit)",
         value_getter: ValueGetter::Metric(roa_operational_profit),
+        level: 2,
+    },
+    RowDescriptor {
+        title: "ROBA (operational profit)",
+        value_getter: ValueGetter::Metric(ro_borrowed_cap_operational_profit),
         level: 2,
     },
     RowDescriptor {
