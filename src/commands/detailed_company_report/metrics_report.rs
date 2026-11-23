@@ -109,7 +109,10 @@ fn roa_operational_profit(metric_input: &MetricInput) -> Option<Metric> {
     let average_assets =
         get_averate_or_last(metric_input, |report| report.balance.assets().total());
     let operational_profit = metric_input.last_report.income.operational_profit();
-    let result = (operational_profit.in_roubles() as f64) / (average_assets.in_roubles() as f64);
+    let percent_in_period =
+        (operational_profit.in_roubles() as f64) / (average_assets.in_roubles() as f64);
+    let result =
+        (percent_in_period * DAYS_IN_FINANCICAL_YEAR) / (metric_input.period.days_count() as f64);
     Some(Metric::Ratio(result))
 }
 
@@ -127,8 +130,10 @@ fn ro_borrowed_cap_operational_profit(metric_input: &MetricInput) -> Option<Metr
     // then things going rather bad...
     let average_borrowed_backed_assets = average_assets - average_loans;
     let operational_profit = metric_input.last_report.income.operational_profit();
-    let result = (operational_profit.in_roubles() as f64)
+    let percent_in_period = (operational_profit.in_roubles() as f64)
         / (average_borrowed_backed_assets.in_roubles() as f64);
+    let result =
+        (percent_in_period * DAYS_IN_FINANCICAL_YEAR) / (metric_input.period.days_count() as f64);
     Some(Metric::Ratio(result))
 }
 
@@ -136,7 +141,9 @@ fn roa_net_profit(metric_input: &MetricInput) -> Option<Metric> {
     let average_assets =
         get_averate_or_last(metric_input, |report| report.balance.assets().total());
     let net_profit = metric_input.last_report.income.net_profit();
-    let result = (net_profit.in_roubles() as f64) / (average_assets.in_roubles() as f64);
+    let percent_in_period = (net_profit.in_roubles() as f64) / (average_assets.in_roubles() as f64);
+    let result =
+        (percent_in_period * DAYS_IN_FINANCICAL_YEAR) / (metric_input.period.days_count() as f64);
     Some(Metric::Ratio(result))
 }
 
@@ -144,7 +151,9 @@ fn roe_net_profit(metric_input: &MetricInput) -> Option<Metric> {
     let average_equity =
         get_averate_or_last(metric_input, |report| report.balance.equity().total());
     let net_profit = metric_input.last_report.income.net_profit();
-    let result = (net_profit.in_roubles() as f64) / (average_equity.in_roubles() as f64);
+    let percent_in_period = (net_profit.in_roubles() as f64) / (average_equity.in_roubles() as f64);
+    let result =
+        (percent_in_period * DAYS_IN_FINANCICAL_YEAR) / (metric_input.period.days_count() as f64);
     Some(Metric::Ratio(result))
 }
 
